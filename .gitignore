@@ -1,0 +1,37 @@
+# Local activation shim: tracked source is GLOBAL_AGENTS.md
+/AGENTS.md
+
+# Credentials and local trust decisions
+/auth.json
+/trust.json
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Conversations and generated provider state
+/sessions/
+/models-store.json
+
+# Machine-specific live configuration
+/settings.json
+/APPEND_SYSTEM.md
+/extensions/tsconfig.json
+
+# Pi-managed dependencies and downloaded tools
+/bin/
+/npm/
+node_modules/
+
+# Runtime output
+*.log
+*.tmp
+
+# Editor and operating-system state
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
