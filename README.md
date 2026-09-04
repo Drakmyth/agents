@@ -16,17 +16,7 @@ Credentials, sessions, trust decisions, generated model catalogs, binaries, depe
 
 The repository intentionally does not track a root `AGENTS.md`. This prevents clones and repository scrapers from automatically treating personal global instructions as repository directives.
 
-Opt in on a machine by creating the ignored local link:
-
-```powershell
-./scripts/enable-global-agents.ps1
-```
-
-```sh
-./scripts/enable-global-agents.sh
-```
-
-The PowerShell script falls back to an NTFS hard link when Windows symbolic links require elevation. Both forms keep edits to `AGENTS.md` and `GLOBAL_AGENTS.md` synchronized.
+To opt in on a machine, create an ignored `AGENTS.md` symbolic link (or equivalent) pointing to `GLOBAL_AGENTS.md`.
 
 ## Configure pi
 
@@ -41,6 +31,14 @@ cp settings.example.json settings.json
 ```
 
 Authentication must be configured independently on every machine. Never copy `auth.json` into the repository.
+
+The squash-message skill can add a co-author trailer configured globally or per repository:
+
+```sh
+git config --global agent.coAuthor "Codex <codex@openai.com>"
+```
+
+Omit the setting to generate messages without a co-author trailer.
 
 ## Other harnesses
 
