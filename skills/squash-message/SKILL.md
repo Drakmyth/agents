@@ -38,14 +38,14 @@ Omit the trailer when `agent.coAuthor` is unset. Never infer an identity from th
    - `git log --reverse --format='%h %s%n%b' <base>..HEAD`
    - `git diff --stat <base>...HEAD`
    - `git diff --summary <base>...HEAD`
-4. Base the message on the branch's net result, not a chronological transcript. Omit intermediate changes that were reverted, superseded, renamed again, or otherwise canceled out. Consolidate formatting, review-fix, and organizational commits into outcome-oriented bullets where relevant.
+4. Use those outputs as the complete default evidence set; inspect full diffs only when they are necessary to resolve material ambiguity. Base the message on the branch's net result, not a chronological transcript. Omit intermediate changes that were reverted, superseded, renamed again, or otherwise canceled out. Consolidate formatting, review-fix, and organizational commits into outcome-oriented bullets where relevant.
 5. Do not include uncommitted changes because hosted squash operations use pushed commits. If `git status --short` is nonempty, mention this after presenting the message.
 6. Produce:
    - an imperative, outcome-focused title, preferably no more than 72 characters;
    - a blank line;
    - 3–6 concise bullets describing the important final outcomes;
    - when configured, a blank line followed by the co-author trailer.
-7. Avoid validation details, commit hashes, pull-request mechanics, and implementation chronology unless the user explicitly asks for them.
+7. Generate one final candidate without alternatives. Avoid validation details, commit hashes, pull-request mechanics, and implementation chronology unless the user explicitly asks for them.
 8. Attempt to copy the exact message to the clipboard using the first available platform utility:
    - macOS: `pbcopy`
    - Linux Wayland: `wl-copy`
