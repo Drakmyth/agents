@@ -18,7 +18,33 @@
 
 - Work on a dedicated branch and push focused commits as implementation progresses.
 - Commit after each coherent, validated step that provides a useful review boundary. Keep commits buildable and testable. A small vertical slice may remain one commit; do not split work merely to create activity. Separate structural and behavioral changes when each can stand independently, and keep generated artifacts with the contract change that requires them.
-- Keep pull requests focused, buildable, and deployable. Treat roughly 350 changed lines as a reviewability guideline rather than a fixed limit; preserve coherence when an artificial split would make the work harder to understand or validate.
+- Keep pull requests focused, buildable, and deployable.
+
+### Pull request size and reviewability
+
+- Before opening or updating a pull request, calculate:
+  - total changed lines,
+  - hand-written changed lines,
+  - generated changed lines,
+  - changed lines per file.
+- Treat lockfiles, generated clients, snapshots, and compiled artifacts as generated. Mark generated files in `.gitattributes` when appropriate.
+- Keep hand-written changes near 350 lines per pull request. Exceeding 500 hand-written changed lines requires explicit user approval before implementation continues.
+- A large generated artifact does not by itself require splitting, but keep it in the same pull request as the dependency or contract change that requires it.
+- If the planned scope is likely to exceed the limit, propose a sequence of independently buildable pull requests during planning. Do not implement the combined scope and split it afterward.
+- If a pull request exceeds the limits, report the measurements and proposed boundaries before opening or updating it, then split the work or obtain explicit approval.
+- Never open a pull request merely because implementation is complete; first verify that its size, focus, and review boundaries comply with these rules.
+
+### Pre-PR checklist
+
+Before pushing the final implementation or opening a pull request:
+
+1. Run validation.
+2. Run `git diff --check`.
+3. Measure total, generated, and hand-written diff size.
+4. Review the changed-file list for unrelated changes.
+5. Confirm the branch contains one deployable concern.
+6. Split the work or obtain explicit approval if size limits are exceeded.
+
 - Open a pull request after completing and validating its implementation scope.
 - After a pull request is merged, update the local default branch, delete the merged local branch, and prune deleted remote branches.
 
