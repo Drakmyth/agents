@@ -22,12 +22,23 @@ export function validateConfig(value: unknown, project = false): McpConfig {
   if (project && input.credentials && Object.keys(input.credentials as object).length) {
     throw new Error("Project MCP configuration cannot define credential profiles");
   }
+  const credentials = (input.credentials ?? {}) as Record<string, { source?: { env?: unknown; command?: unknown; timeoutMs?: unknown } }>;
+  for (const [name, profile] of Object.entries(credentials)) {
+    const source = profile?.source;
+    const validEnv = typeof source?.env === "string" && source.env.length > 0;
+    const validCommand = Array.isArray(source?.command) && source.command.length > 0 && source.command.every(value => typeof value === "string");
+    if (!validEnv && !validCommand) throw new Error(`Invalid credential profile: ${name}`);
+    if (source?.timeoutMs !== undefined && (typeof source.timeoutMs !== "number" || source.timeoutMs < 100 || source.timeoutMs > 120_000)) throw new Error(`Invalid credential timeout: ${name}`);
+  }
   const servers = (input.servers ?? {}) as Record<string, ServerConfig>;
   for (const [id, server] of Object.entries(servers)) {
     if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(id)) throw new Error(`Invalid MCP server id: ${id}`);
-    if (!server || typeof server !== "object" || typeof server.url !== "string") throw new Error(`Server ${id} requires a URL`);
-    const url = new URL(server.url);
-    if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error(`Server ${id} must use HTTP or HTTPS`);
+    if (!server || typeof server !== "object") throw new Error(`Server ${id} must be an object`);
+    if (!project && typeof server.url !== "string") throw new Error(`Server ${id} requires a URL`);
+    if (server.url) {
+      const url = new URL(server.url);
+      if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error(`Server ${id} must use HTTP or HTTPS`);
+    }
     if (server.toolMode && !["automatic", "on-demand"].includes(server.toolMode)) throw new Error(`Invalid tool mode for ${id}`);
   }
   return value as McpConfig;
@@ -56,6 +67,9 @@ export function mergeConfig(global: McpConfig, project?: McpConfig): EffectiveCo
     servers[id] = base
       ? { ...base, ...structuredClone(override), tools: { ...(base.tools ?? {}), ...(override.tools ?? {}) }, headers: { ...(base.headers ?? {}), ...(override.headers ?? {}) } }
       : structuredClone(override);
+  }
+  for (const [id, server] of Object.entries(servers)) {
+    if (!server.url) throw new Error(`Effective server ${id} requires a URL`);
   }
   return { ...EMPTY_CONFIG, credentials: structuredClone(global.credentials ?? {}), servers };
 }

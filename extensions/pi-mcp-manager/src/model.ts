@@ -24,7 +24,7 @@ export interface CachedTool {
 export interface ServerConfig {
   name?: string;
   enabled?: boolean;
-  url: string;
+  url?: string;
   toolMode?: Exclude<ToolMode, "disabled">;
   tools?: Record<string, ToolMode>;
   headers?: Record<string, HeaderValue>;
