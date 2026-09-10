@@ -1,5 +1,5 @@
 import { CONFIG_DIR_NAME, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { configPaths, mergeConfig, readConfig, writeJsonAtomic } from "./config.js";
+import { configPaths, mergeConfig, readConfig, validateConfig, writeJsonAtomic } from "./config.js";
 import { AuthStore } from "./auth-store.js";
 import type { EffectiveConfig, McpConfig, ServerConfig, ToolMode } from "./model.js";
 import { EMPTY_CONFIG } from "./model.js";
@@ -24,9 +24,10 @@ export class McpRuntime {
 
   private config(scope: ConfigScope): McpConfig { return scope === "global" ? this.global : this.project; }
   async save(scope: ConfigScope): Promise<void> {
-    const config = this.config(scope);
+    const config = validateConfig(this.config(scope), scope === "project");
+    const effective = mergeConfig(this.global, this.project);
     await writeJsonAtomic(scope === "global" ? this.paths.global : this.paths.project, config);
-    this.effective = mergeConfig(this.global, this.project);
+    this.effective = effective;
   }
   origin(serverId: string): ConfigScope { return this.project.servers?.[serverId] ? "project" : "global"; }
   async putServer(scope: ConfigScope, id: string, server: ServerConfig): Promise<void> {
