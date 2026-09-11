@@ -60,28 +60,58 @@ export class McpTools {
   }
 
   applyInitialActivation(): void {
-    const managed = new Set([...this.registered.values()].map(tool => tool.piName));
-    const active = this.pi.getActiveTools().filter(name => !managed.has(name));
+    const managed = new Set<string>();
+    for (const tool of this.registered.values()) managed.add(tool.piName);
+
+    const active: string[] = [];
+    const activeNames = new Set<string>();
+    for (const name of this.pi.getActiveTools()) {
+      if (!managed.has(name)) {
+        active.push(name);
+        activeNames.add(name);
+      }
+    }
     for (const registered of this.registered.values()) {
       const server = this.getConfig().servers[registered.serverId];
-      if (server?.enabled && effectiveMode(server.toolMode, server.tools?.[registered.tool.name]) === "automatic") active.push(registered.piName);
+      if (server?.enabled && effectiveMode(server.toolMode, server.tools[registered.tool.name]) === "automatic" && !activeNames.has(registered.piName)) {
+        active.push(registered.piName);
+        activeNames.add(registered.piName);
+      }
     }
-    this.pi.setActiveTools([...new Set([...active, "mcp_search_tools"])]);
+    if (!activeNames.has("mcp_search_tools")) active.push("mcp_search_tools");
+    this.pi.setActiveTools(active);
   }
 
   search(query: string, limit: number): { matches: RegisteredTool[]; added: string[] } {
     const terms = query.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-    const matches = [...this.registered.values()].map(item => {
+    const candidates: Array<{ item: RegisteredTool; score: number }> = [];
+    for (const item of this.registered.values()) {
       const server = this.getConfig().servers[item.serverId];
-      const text = `${item.serverId} ${server?.name ?? ""} ${item.tool.name} ${item.tool.title ?? ""} ${item.tool.description ?? ""}`.toLowerCase();
-      return { item, score: terms.reduce((score, term) => score + (text.includes(term) ? 1 : 0), 0) };
-    }).filter(({ item, score }) => {
-      const server = this.getConfig().servers[item.serverId];
-      return score > 0 && !!server?.enabled && effectiveMode(server.toolMode, server.tools?.[item.tool.name]) === "on-demand";
-    }).sort((a, b) => b.score - a.score || a.item.piName.localeCompare(b.item.piName)).slice(0, limit).map(value => value.item);
+      if (!server?.enabled || effectiveMode(server.toolMode, server.tools[item.tool.name]) !== "on-demand") continue;
+
+      const text = `${item.serverId} ${server.name} ${item.tool.name} ${item.tool.title ?? ""} ${item.tool.description ?? ""}`.toLowerCase();
+      let score = 0;
+      for (const term of terms) if (text.includes(term)) score++;
+      if (score > 0) candidates.push({ item, score });
+    }
+    candidates.sort((a, b) => b.score - a.score || a.item.piName.localeCompare(b.item.piName));
+
+    const matches: RegisteredTool[] = [];
+    for (const candidate of candidates) {
+      if (matches.length === limit) break;
+      matches.push(candidate.item);
+    }
+
     const active = this.pi.getActiveTools();
-    const added = matches.map(item => item.piName).filter(name => !active.includes(name));
-    if (added.length) this.pi.setActiveTools([...new Set([...active, ...added])]);
+    const activeNames = new Set(active);
+    const added: string[] = [];
+    for (const item of matches) {
+      if (activeNames.has(item.piName)) continue;
+      active.push(item.piName);
+      activeNames.add(item.piName);
+      added.push(item.piName);
+    }
+    if (added.length) this.pi.setActiveTools(active);
     return { matches, added };
   }
 }
