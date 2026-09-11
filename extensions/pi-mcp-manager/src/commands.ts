@@ -50,7 +50,7 @@ async function addServer(ctx: ExtensionCommandContext, runtime: McpRuntime): Pro
 async function editServer(id: string, ctx: ExtensionCommandContext, runtime: McpRuntime): Promise<boolean> {
   const server = runtime.resolved.servers[id];
   if (!server) throw new Error(`Unknown MCP server: ${id}`);
-  const scope = runtime.origin(id);
+  const scope = runtime.storageScope(id);
   const url = (await ctx.ui.input("Streamable HTTP endpoint", server.url))?.trim();
   if (!url) return false;
   const name = (await ctx.ui.input("Display name", server.name ?? id))?.trim() || id;
@@ -81,7 +81,7 @@ async function refreshServer(id: string, ctx: ExtensionCommandContext, runtime: 
   const server = runtime.resolved.servers[id];
   if (!server) throw new Error(`Unknown MCP server: ${id}`);
   const catalog = await clients.refresh(id, server);
-  const scope = runtime.origin(id);
+  const scope = runtime.storageScope(id);
   if (scope === "global") {
     const source = runtime.global.servers?.[id];
     if (!source) throw new Error(`Global MCP server ${id} is unavailable`);
@@ -114,7 +114,7 @@ async function configureTools(id: string, ctx: ExtensionCommandContext, runtime:
   if (!tool) return false;
   const mode = await ctx.ui.select("Activation", ["automatic", "on-demand", "disabled"]) as ToolMode | undefined;
   if (!mode) return false;
-  await runtime.setToolMode(runtime.origin(id), id, tool, mode);
+  await runtime.setToolMode(runtime.storageScope(id), id, tool, mode);
   return true;
 }
 
@@ -180,9 +180,9 @@ async function interactive(pi: ExtensionAPI, ctx: ExtensionCommandContext, runti
     else if (operation === "Login with OAuth") await loginServer(pi, serverId, ctx, runtime, clients);
     else if (operation === "Logout") { await runtime.auth.clear(serverId); await clients.disconnect(serverId); ctx.ui.notify(`Logged out of ${serverId}`, "info"); }
     else if (operation === "Disconnect") await clients.disconnect(serverId);
-    else if (operation === "Enable" || operation === "Disable") { await runtime.setEnabled(runtime.origin(serverId), serverId, operation === "Enable"); await ctx.reload(); return; }
+    else if (operation === "Enable" || operation === "Disable") { await runtime.setEnabled(runtime.storageScope(serverId), serverId, operation === "Enable"); await ctx.reload(); return; }
     else if (operation === "Remove override/configuration") {
-      const scope = runtime.origin(serverId);
+      const scope = runtime.storageScope(serverId);
       if (await ctx.ui.confirm("Remove MCP configuration?", `${serverId} (${scope})`)) { await runtime.removeServer(scope, serverId); await ctx.reload(); return; }
     }
   }
@@ -206,7 +206,7 @@ export function registerCommands(pi: ExtensionAPI, runtime: McpRuntime, clients:
         if (action === "login") return await loginServer(pi, id, ctx, runtime, clients);
         if (action === "logout") { await runtime.auth.clear(id); await clients.disconnect(id); return; }
         if (action === "disconnect") return await clients.disconnect(id);
-        if (action === "enable" || action === "disable") { await runtime.setEnabled(runtime.origin(id), id, action === "enable"); await ctx.reload(); return; }
+        if (action === "enable" || action === "disable") { await runtime.setEnabled(runtime.storageScope(id), id, action === "enable"); await ctx.reload(); return; }
         throw new Error(`Unknown /mcp action: ${action}`);
       } catch (error) { ctx.ui.notify(error instanceof Error ? error.message : String(error), "error"); }
     },

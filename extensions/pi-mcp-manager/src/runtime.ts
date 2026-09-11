@@ -28,7 +28,11 @@ export class McpRuntime {
     await writeJsonAtomic(scope === "global" ? this.paths.global : this.paths.project, config);
     this.resolved = resolved;
   }
-  origin(serverId: string): ConfigScope { return this.project.servers?.[serverId] ? "project" : "global"; }
+  storageScope(serverId: string): ConfigScope {
+    if (this.project.servers?.[serverId]) return "project";
+    if (this.global.servers?.[serverId]) return "global";
+    throw new Error(`Unknown MCP server: ${serverId}`);
+  }
   async putGlobalServer(id: string, server: StoredServer): Promise<void> {
     this.global.servers ??= {};
     this.global.servers[id] = server;

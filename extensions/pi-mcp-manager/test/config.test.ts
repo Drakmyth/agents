@@ -4,6 +4,7 @@ import { resolveConfig, validateProjectConfig } from "../src/config.js";
 import { EMPTY_GLOBAL_CONFIG, EMPTY_PROJECT_CONFIG } from "../src/model.js";
 import { toolName } from "../src/names.js";
 import { redact } from "../src/credentials.js";
+import { McpRuntime } from "../src/runtime.js";
 
 test("project server fields and nested overrides merge over global configuration", () => {
   const global = { ...EMPTY_GLOBAL_CONFIG, credentials: { token: { source: { env: "TOKEN" } } }, servers: { api: { url: "https://global.test/mcp", tools: { read: "automatic" as const }, headers: { Accept: { value: "json" } } } } };
@@ -27,6 +28,16 @@ test("resolved servers contain runtime defaults", () => {
     oauth: false,
     catalog: [],
   });
+});
+
+test("storage scope selects the most specific stored entry", () => {
+  const runtime = new McpRuntime();
+  runtime.global.servers = { global: { url: "https://example.test/mcp" }, overridden: { url: "https://example.test/mcp" } };
+  runtime.project.servers = { overridden: { enabled: false }, project: { url: "https://project.test/mcp" } };
+  assert.equal(runtime.storageScope("global"), "global");
+  assert.equal(runtime.storageScope("overridden"), "project");
+  assert.equal(runtime.storageScope("project"), "project");
+  assert.throws(() => runtime.storageScope("missing"), /Unknown MCP server/);
 });
 
 test("project credential profiles are rejected", () => {
