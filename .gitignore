@@ -3,6 +3,8 @@
 
 # Credentials and local trust decisions
 /auth.json
+/mcp-auth.json
+/mcp.json
 /trust.json
 .env
 .env.*
