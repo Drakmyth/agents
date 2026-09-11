@@ -144,16 +144,26 @@ async function addCredential(ctx: ExtensionCommandContext, runtime: McpRuntime):
 }
 
 async function manageCredential(ctx: ExtensionCommandContext, runtime: McpRuntime): Promise<boolean> {
-  const names = Object.keys(runtime.global.credentials ?? {});
-  if (!names.length) { ctx.ui.notify("No global credential profiles configured.", "info"); return false; }
+  const credentials = runtime.global.credentials;
+  if (!credentials) {
+    ctx.ui.notify("No global credential profiles configured.", "info");
+    return false;
+  }
+  const names = Object.keys(credentials);
+  if (!names.length) {
+    ctx.ui.notify("No global credential profiles configured.", "info");
+    return false;
+  }
   const name = await ctx.ui.select("Credential profile", names);
   if (!name) return false;
+  const credential = credentials[name];
+  if (!credential) throw new Error(`Credential profile ${name} is unavailable`);
   const action = await ctx.ui.select(name, ["Test", "Remove", "Back"]);
   if (action === "Test") {
-    await resolveSecret(runtime.global.credentials![name]!.source);
-    ctx.ui.notify(`Credential ${name} resolved successfully; its value was not displayed.`, "info");
+    await resolveSecret(credential.source);
+    ctx.ui.notify(`Credential ${name} resolved successfully.`, "info");
   } else if (action === "Remove" && await ctx.ui.confirm("Remove credential profile?", name)) {
-    delete runtime.global.credentials![name];
+    delete credentials[name];
     await runtime.save("global");
     return true;
   }
@@ -171,7 +181,8 @@ async function interactive(pi: ExtensionAPI, ctx: ExtensionCommandContext, runti
     if (!servers.length) { ctx.ui.notify("No MCP servers configured.", "info"); continue; }
     const id = await ctx.ui.select("Server", servers.map(([key, server]) => `${key} — ${server.enabled === false ? "disabled" : clients.isConnected(key) ? "connected" : "disconnected"}`));
     if (!id) continue;
-    const serverId = id.split(" — ")[0]!;
+    const [serverId] = id.split(" — ");
+    if (!serverId) continue;
     const operation = await ctx.ui.select(serverId, ["Refresh tools", "Configure tool", "Edit", "Duplicate", "Login with OAuth", "Logout", runtime.resolved.servers[serverId]?.enabled === false ? "Enable" : "Disable", "Disconnect", "Remove override/configuration", "Back"]);
     if (!operation || operation === "Back") continue;
     if (operation === "Refresh tools") { await refreshServer(serverId, ctx, runtime, clients); return; }

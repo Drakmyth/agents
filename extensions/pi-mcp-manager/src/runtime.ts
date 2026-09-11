@@ -64,9 +64,10 @@ export class McpRuntime {
   }
   async setToolMode(scope: ConfigScope, serverId: string, toolName: string, mode: ToolMode): Promise<void> {
     if (scope === "global") {
-      const current = this.global.servers?.[serverId];
+      const servers = this.global.servers;
+      const current = servers?.[serverId];
       if (!current) throw new Error(`Unknown global MCP server: ${serverId}`);
-      this.global.servers![serverId] = { ...current, tools: { ...(current.tools ?? {}), [toolName]: mode } };
+      servers[serverId] = { ...current, tools: { ...(current.tools ?? {}), [toolName]: mode } };
     } else {
       this.project.servers ??= {};
       const current = this.project.servers[serverId] ?? {};
