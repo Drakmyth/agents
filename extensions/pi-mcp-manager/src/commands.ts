@@ -27,7 +27,7 @@ async function addServer(ctx: ExtensionCommandContext, runtime: McpRuntime): Pro
   const name = (await ctx.ui.input("Display name", id))?.trim() || id;
   const toolMode = await ctx.ui.select("Default tool activation", ["on-demand", "automatic"]) as "on-demand" | "automatic" | undefined;
   if (!toolMode) return false;
-  const profileNames = Object.keys(runtime.effective.credentials);
+  const profileNames = Object.keys(runtime.resolved.credentials);
   const authOptions = ["OAuth", "Bearer token from environment", ...(profileNames.length ? ["Bearer token from credential profile"] : []), "None"];
   const auth = await ctx.ui.select("Authentication", authOptions);
   if (!auth) return false;
@@ -48,7 +48,7 @@ async function addServer(ctx: ExtensionCommandContext, runtime: McpRuntime): Pro
 }
 
 async function editServer(id: string, ctx: ExtensionCommandContext, runtime: McpRuntime): Promise<boolean> {
-  const server = runtime.effective.servers[id];
+  const server = runtime.resolved.servers[id];
   if (!server) throw new Error(`Unknown MCP server: ${id}`);
   const scope = runtime.origin(id);
   const url = (await ctx.ui.input("Streamable HTTP endpoint", server.url))?.trim();
@@ -65,7 +65,7 @@ async function editServer(id: string, ctx: ExtensionCommandContext, runtime: Mcp
 }
 
 async function duplicateServer(id: string, ctx: ExtensionCommandContext, runtime: McpRuntime): Promise<boolean> {
-  const server = runtime.effective.servers[id];
+  const server = runtime.resolved.servers[id];
   if (!server) throw new Error(`Unknown MCP server: ${id}`);
   const scope = await chooseScope(ctx);
   if (!scope) return false;
@@ -78,7 +78,7 @@ async function duplicateServer(id: string, ctx: ExtensionCommandContext, runtime
 }
 
 async function refreshServer(id: string, ctx: ExtensionCommandContext, runtime: McpRuntime, clients: McpClients): Promise<void> {
-  const server = runtime.effective.servers[id];
+  const server = runtime.resolved.servers[id];
   if (!server) throw new Error(`Unknown MCP server: ${id}`);
   const catalog = await clients.refresh(id, server);
   const scope = runtime.origin(id);
@@ -96,7 +96,7 @@ async function refreshServer(id: string, ctx: ExtensionCommandContext, runtime: 
 }
 
 async function loginServer(pi: ExtensionAPI, id: string, ctx: ExtensionCommandContext, runtime: McpRuntime, clients: McpClients): Promise<void> {
-  const server = runtime.effective.servers[id];
+  const server = runtime.resolved.servers[id];
   if (!server) throw new Error(`Unknown MCP server: ${id}`);
   if (!server.oauth) throw new Error(`OAuth is not enabled for ${id}`);
   const callback = await listenForOAuthCallback();
@@ -108,7 +108,7 @@ async function loginServer(pi: ExtensionAPI, id: string, ctx: ExtensionCommandCo
 }
 
 async function configureTools(id: string, ctx: ExtensionCommandContext, runtime: McpRuntime): Promise<boolean> {
-  const server = runtime.effective.servers[id];
+  const server = runtime.resolved.servers[id];
   if (!server?.catalog?.length) { ctx.ui.notify("Refresh this server's tool catalog first.", "warning"); return false; }
   const tool = await ctx.ui.select("Tool", server.catalog.map(item => item.name));
   if (!tool) return false;
@@ -161,7 +161,7 @@ async function manageCredential(ctx: ExtensionCommandContext, runtime: McpRuntim
 
 async function interactive(pi: ExtensionAPI, ctx: ExtensionCommandContext, runtime: McpRuntime, clients: McpClients): Promise<void> {
   while (true) {
-    const servers = Object.entries(runtime.effective.servers);
+    const servers = Object.entries(runtime.resolved.servers);
     const action = await ctx.ui.select("MCP Manager", ["Add server", "Manage server", "Add credential profile", "Manage credential profile", "Close"]);
     if (!action || action === "Close") return;
     if (action === "Add server") { if (await addServer(ctx, runtime)) { await ctx.reload(); return; } continue; }
@@ -171,7 +171,7 @@ async function interactive(pi: ExtensionAPI, ctx: ExtensionCommandContext, runti
     const id = await ctx.ui.select("Server", servers.map(([key, server]) => `${key} — ${server.enabled === false ? "disabled" : clients.isConnected(key) ? "connected" : "disconnected"}`));
     if (!id) continue;
     const serverId = id.split(" — ")[0]!;
-    const operation = await ctx.ui.select(serverId, ["Refresh tools", "Configure tool", "Edit", "Duplicate", "Login with OAuth", "Logout", runtime.effective.servers[serverId]?.enabled === false ? "Enable" : "Disable", "Disconnect", "Remove override/configuration", "Back"]);
+    const operation = await ctx.ui.select(serverId, ["Refresh tools", "Configure tool", "Edit", "Duplicate", "Login with OAuth", "Logout", runtime.resolved.servers[serverId]?.enabled === false ? "Enable" : "Disable", "Disconnect", "Remove override/configuration", "Back"]);
     if (!operation || operation === "Back") continue;
     if (operation === "Refresh tools") { await refreshServer(serverId, ctx, runtime, clients); return; }
     if (operation === "Configure tool") { if (await configureTools(serverId, ctx, runtime)) { await ctx.reload(); return; } }
@@ -197,7 +197,7 @@ export function registerCommands(pi: ExtensionAPI, runtime: McpRuntime, clients:
         const [action, id] = args.trim().split(/\s+/, 2);
         if (!action) { if (!ctx.hasUI) throw new Error("Use /mcp list in non-interactive mode"); await interactive(pi, ctx, runtime, clients); return; }
         if (action === "list") {
-          const lines = Object.entries(runtime.effective.servers).map(([key, server]) => `${key}\t${server.enabled === false ? "disabled" : clients.isConnected(key) ? "connected" : "enabled"}\t${server.url}`);
+          const lines = Object.entries(runtime.resolved.servers).map(([key, server]) => `${key}\t${server.enabled === false ? "disabled" : clients.isConnected(key) ? "connected" : "enabled"}\t${server.url}`);
           ctx.ui.notify(lines.join("\n") || "No MCP servers configured", "info"); return;
         }
         if (action === "add") { if (!ctx.hasUI) throw new Error("/mcp add requires interactive UI"); if (await addServer(ctx, runtime)) { await ctx.reload(); return; } return; }

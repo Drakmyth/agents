@@ -18,16 +18,16 @@ export default function piMcpManager(pi: ExtensionAPI): void {
     }
     clients = new McpClients(
       runtime.auth,
-      runtime.effective.credentials,
+      runtime.resolved.credentials,
       OAUTH_CALLBACK_URL,
       (serverId, url) => pi.events.emit("drakmyth:pi-mcp-manager:oauth-redirect", { serverId, url: url.toString() }),
     );
-    const tools = new McpTools(pi, clients, () => runtime.effective);
+    const tools = new McpTools(pi, clients, () => runtime.resolved);
     registerSearchTool(pi, tools);
     tools.registerCatalogs();
     tools.applyInitialActivation();
     registerCommands(pi, runtime, clients);
-    const enabled = Object.values(runtime.effective.servers).filter(server => server.enabled !== false).length;
+    const enabled = Object.values(runtime.resolved.servers).filter(server => server.enabled).length;
     if (enabled) ctx.ui.setStatus("drakmyth.pi-mcp-manager", `MCP ${enabled}`);
   });
 

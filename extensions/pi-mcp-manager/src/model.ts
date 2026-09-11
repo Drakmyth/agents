@@ -61,7 +61,7 @@ export interface ProjectConfig extends ConfigFile {
   servers?: Record<string, ProjectServerOverride>;
 }
 
-export interface EffectiveConfig extends ConfigFile {
+export interface ResolvedConfig extends ConfigFile {
   credentials: Record<string, CredentialProfile>;
   servers: Record<string, ResolvedServer>;
 }

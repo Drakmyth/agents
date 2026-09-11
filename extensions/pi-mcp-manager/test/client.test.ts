@@ -8,7 +8,7 @@ import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js
 import * as z from "zod/v4";
 import { AuthStore } from "../src/auth-store.js";
 import { McpClients } from "../src/client.js";
-import { mergeConfig } from "../src/config.js";
+import { resolveConfig } from "../src/config.js";
 import { EMPTY_GLOBAL_CONFIG } from "../src/model.js";
 
 async function mockServer() {
@@ -32,7 +32,7 @@ test("Streamable HTTP client discovers and calls MCP tools", async () => {
   const server = await mockServer();
   const clients = new McpClients(new AuthStore("unused"), {}, new URL("http://127.0.0.1:33418/callback"), () => undefined);
   try {
-    const config = mergeConfig({ ...EMPTY_GLOBAL_CONFIG, servers: { test: { url: server.url } } }).servers.test!;
+    const config = resolveConfig({ ...EMPTY_GLOBAL_CONFIG, servers: { test: { url: server.url } } }).servers.test!;
     const tools = await clients.refresh("test", config);
     assert.deepEqual(tools.map(tool => tool.name), ["echo"]);
     const result = await clients.call("test", config, "echo", { text: "hello" });

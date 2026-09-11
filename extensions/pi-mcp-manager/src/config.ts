@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import {
   EMPTY_GLOBAL_CONFIG,
   EMPTY_PROJECT_CONFIG,
-  type EffectiveConfig,
+  type ResolvedConfig,
   type GlobalConfig,
   type ProjectConfig,
   type ProjectServerOverride,
@@ -112,7 +112,7 @@ function resolveServer(id: string, stored: StoredServer, override?: ProjectServe
   };
 }
 
-export function mergeConfig(global: GlobalConfig, project: ProjectConfig = EMPTY_PROJECT_CONFIG): EffectiveConfig {
+export function resolveConfig(global: GlobalConfig, project: ProjectConfig = EMPTY_PROJECT_CONFIG): ResolvedConfig {
   const servers: Record<string, ResolvedServer> = {};
   for (const [id, stored] of Object.entries(global.servers ?? {})) servers[id] = resolveServer(id, stored, project.servers?.[id]);
   for (const [id, override] of Object.entries(project.servers ?? {})) {

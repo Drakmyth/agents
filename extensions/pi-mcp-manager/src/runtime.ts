@@ -1,7 +1,7 @@
 import { CONFIG_DIR_NAME, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { configPaths, mergeConfig, readGlobalConfig, readProjectConfig, validateGlobalConfig, validateProjectConfig, writeJsonAtomic } from "./config.js";
+import { configPaths, readGlobalConfig, readProjectConfig, resolveConfig, validateGlobalConfig, validateProjectConfig, writeJsonAtomic } from "./config.js";
 import { AuthStore } from "./auth-store.js";
-import type { EffectiveConfig, GlobalConfig, ProjectConfig, ProjectServerOverride, StoredServer, ToolMode } from "./model.js";
+import type { GlobalConfig, ProjectConfig, ProjectServerOverride, ResolvedConfig, StoredServer, ToolMode } from "./model.js";
 import { EMPTY_GLOBAL_CONFIG, EMPTY_PROJECT_CONFIG } from "./model.js";
 
 export type ConfigScope = "global" | "project";
@@ -9,7 +9,7 @@ export type ConfigScope = "global" | "project";
 export class McpRuntime {
   global: GlobalConfig = structuredClone(EMPTY_GLOBAL_CONFIG);
   project: ProjectConfig = structuredClone(EMPTY_PROJECT_CONFIG);
-  effective: EffectiveConfig = mergeConfig(this.global);
+  resolved: ResolvedConfig = resolveConfig(this.global);
   paths!: ReturnType<typeof configPaths>;
   auth!: AuthStore;
 
@@ -17,16 +17,16 @@ export class McpRuntime {
     this.paths = configPaths(ctx.cwd, CONFIG_DIR_NAME);
     this.global = await readGlobalConfig(this.paths.global);
     this.project = ctx.isProjectTrusted() ? await readProjectConfig(this.paths.project) : structuredClone(EMPTY_PROJECT_CONFIG);
-    this.effective = mergeConfig(this.global, this.project);
+    this.resolved = resolveConfig(this.global, this.project);
     this.auth = new AuthStore(this.paths.auth);
     await this.auth.load();
   }
 
   async save(scope: ConfigScope): Promise<void> {
     const config = scope === "global" ? validateGlobalConfig(this.global) : validateProjectConfig(this.project);
-    const effective = mergeConfig(this.global, this.project);
+    const resolved = resolveConfig(this.global, this.project);
     await writeJsonAtomic(scope === "global" ? this.paths.global : this.paths.project, config);
-    this.effective = effective;
+    this.resolved = resolved;
   }
   origin(serverId: string): ConfigScope { return this.project.servers?.[serverId] ? "project" : "global"; }
   async putGlobalServer(id: string, server: StoredServer): Promise<void> {
@@ -45,7 +45,7 @@ export class McpRuntime {
   }
   async setEnabled(scope: ConfigScope, id: string, enabled: boolean): Promise<void> {
     if (scope === "global") {
-      const current = this.global.servers?.[id] ?? this.effective.servers[id];
+      const current = this.global.servers?.[id] ?? this.resolved.servers[id];
       if (!current) throw new Error(`Unknown MCP server: ${id}`);
       this.global.servers ??= {};
       this.global.servers[id] = { ...current, enabled };

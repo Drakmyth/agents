@@ -2,7 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, truncateHead } from "@earendil-works/pi-coding-agent";
 import { Type, type TSchema } from "typebox";
 import { McpClients } from "./client.js";
-import type { EffectiveConfig, CachedTool, ToolMode } from "./model.js";
+import type { ResolvedConfig, CachedTool, ToolMode } from "./model.js";
 import { toolName } from "./names.js";
 
 interface RegisteredTool { piName: string; serverId: string; tool: CachedTool }
@@ -26,7 +26,7 @@ function resultText(result: Awaited<ReturnType<McpClients["call"]>>): string {
 
 export class McpTools {
   private readonly registered = new Map<string, RegisteredTool>();
-  constructor(private readonly pi: ExtensionAPI, private readonly clients: McpClients, private readonly getConfig: () => EffectiveConfig) {}
+  constructor(private readonly pi: ExtensionAPI, private readonly clients: McpClients, private readonly getConfig: () => ResolvedConfig) {}
 
   registerCatalogs(): void {
     const occupied = new Set(this.pi.getAllTools().map(tool => tool.name));
