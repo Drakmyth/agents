@@ -68,7 +68,14 @@ export class McpClients {
     let cursor: string | undefined;
     do {
       const result = await client.listTools(cursor ? { cursor } : undefined, { signal });
-      tools.push(...result.tools.map(tool => ({ name: tool.name, title: tool.annotations?.title, description: tool.description, inputSchema: tool.inputSchema })));
+      for (const tool of result.tools) {
+        tools.push({
+          name: tool.name,
+          title: tool.annotations?.title,
+          description: tool.description,
+          inputSchema: tool.inputSchema,
+        });
+      }
       cursor = result.nextCursor;
     } while (cursor);
     return tools;
