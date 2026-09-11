@@ -29,7 +29,9 @@ Do not both install and auto-discover the same checkout.
 
 ## Use
 
-Run `/mcp` for the interactive manager. Useful direct commands include:
+Run `/mcp` for a framed, server-first manager. Select a server to view its status, connection details, tools, and available actions. Management results remain inside the manager instead of appearing as transcript notifications.
+
+Useful direct commands include:
 
 ```text
 /mcp list
