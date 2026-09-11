@@ -6,7 +6,7 @@ Personal agent instructions and reusable skills, with optional harness-specific 
 
 - `GLOBAL_AGENTS.md`: machine-global collaboration instructions, deliberately named so repository-aware harnesses do not load it automatically
 - `skills/`: portable [Agent Skills](https://agentskills.io/) packages
-- `extensions/`: pi-specific extensions, including [`pi-mcp-manager`](extensions/pi-mcp-manager/README.md)
+- `extensions/`: pi-specific extensions
 - `themes/`: pi-specific themes
 
 Consumers can place or link each resource into the locations recognized by their chosen harness. Harness-specific extensions and themes are optional.
