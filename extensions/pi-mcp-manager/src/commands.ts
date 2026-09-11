@@ -20,11 +20,11 @@ async function chooseScope(ctx: ExtensionCommandContext): Promise<ConfigScope | 
 async function addServer(ctx: ExtensionCommandContext, runtime: McpRuntime): Promise<boolean> {
   const scope = await chooseScope(ctx);
   if (!scope) return false;
-  const id = (await ctx.ui.input("Server ID", "github"))?.trim();
+  const id = (await ctx.ui.input("Server ID (stable configuration key)", "my-server"))?.trim();
   if (!id) return false;
-  const url = (await ctx.ui.input("Streamable HTTP endpoint", "https://example.com/mcp"))?.trim();
+  const url = (await ctx.ui.input("Streamable HTTP endpoint URL", "https://mcp.example.com/mcp"))?.trim();
   if (!url) return false;
-  const name = (await ctx.ui.input("Display name", id))?.trim() || id;
+  const name = (await ctx.ui.input("Display name (shown in menus)", "My MCP Server"))?.trim() || id;
   const toolMode = await ctx.ui.select("Default tool activation", ["on-demand", "automatic"]) as "on-demand" | "automatic" | undefined;
   if (!toolMode) return false;
   const profileNames = Object.keys(runtime.resolved.credentials);
@@ -51,9 +51,10 @@ async function editServer(id: string, ctx: ExtensionCommandContext, runtime: Mcp
   const server = runtime.resolved.servers[id];
   if (!server) throw new Error(`Unknown MCP server: ${id}`);
   const scope = runtime.storageScope(id);
-  const url = (await ctx.ui.input("Streamable HTTP endpoint", server.url))?.trim();
-  if (!url) return false;
-  const name = (await ctx.ui.input("Display name", server.name ?? id))?.trim() || id;
+  const urlInput = (await ctx.ui.input("Streamable HTTP endpoint URL (blank keeps current)", server.url))?.trim();
+  const url = urlInput || server.url;
+  const nameInput = (await ctx.ui.input("Display name (blank keeps current)", server.name))?.trim();
+  const name = nameInput || server.name;
   const toolMode = await ctx.ui.select("Default tool activation", ["on-demand", "automatic"]) as "on-demand" | "automatic" | undefined;
   if (!toolMode) return false;
   const oauth = await ctx.ui.confirm("MCP OAuth", "Use OAuth for this server?");
@@ -119,7 +120,7 @@ async function configureTools(id: string, ctx: ExtensionCommandContext, runtime:
 }
 
 async function addCredential(ctx: ExtensionCommandContext, runtime: McpRuntime): Promise<boolean> {
-  const name = (await ctx.ui.input("Global credential profile name", "github-token"))?.trim();
+  const name = (await ctx.ui.input("Global credential profile name", "mcp-token"))?.trim();
   if (!name) return false;
   const kind = await ctx.ui.select("Credential source", ["Environment variable", "Command"]);
   if (!kind) return false;
