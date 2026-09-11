@@ -5,6 +5,7 @@ import { listenForOAuthCallback } from "./oauth-callback.js";
 import type { StoredServer, ToolMode } from "./model.js";
 import { resolveSecret } from "./credentials.js";
 import { serverState, stateLabel } from "./status.js";
+import { showCredentialMenu, showManagerResult, showServerDetails, showServerList } from "./manager-ui.js";
 
 async function openBrowser(pi: ExtensionAPI, url: URL): Promise<void> {
   const command = process.platform === "win32" ? ["cmd", ["/c", "start", "", url.toString()]] as const
@@ -18,7 +19,7 @@ async function chooseScope(ctx: ExtensionCommandContext): Promise<ConfigScope | 
   return await ctx.ui.select("Configuration scope", values) as ConfigScope | undefined;
 }
 
-async function addServer(ctx: ExtensionCommandContext, runtime: McpRuntime): Promise<boolean> {
+async function addServer(ctx: ExtensionCommandContext, runtime: McpRuntime, notify = true): Promise<boolean> {
   const scope = await chooseScope(ctx);
   if (!scope) return false;
   const id = (await ctx.ui.input("Server ID (stable configuration key)", "my-server"))?.trim();
@@ -44,7 +45,7 @@ async function addServer(ctx: ExtensionCommandContext, runtime: McpRuntime): Pro
   }
   if (scope === "global") await runtime.putGlobalServer(id, server);
   else await runtime.putProjectOverride(id, server);
-  ctx.ui.notify(`Added MCP server ${id}`, "info");
+  if (notify) ctx.ui.notify(`Added MCP server ${id}`, "info");
   return true;
 }
 
@@ -79,7 +80,7 @@ async function duplicateServer(id: string, ctx: ExtensionCommandContext, runtime
   return true;
 }
 
-async function refreshServer(id: string, ctx: ExtensionCommandContext, runtime: McpRuntime, clients: McpClients): Promise<void> {
+async function refreshServer(id: string, ctx: ExtensionCommandContext, runtime: McpRuntime, clients: McpClients, reload = true): Promise<number> {
   const server = runtime.resolved.servers[id];
   if (!server) throw new Error(`Unknown MCP server: ${id}`);
   const catalog = await clients.refresh(id, server);
@@ -93,25 +94,28 @@ async function refreshServer(id: string, ctx: ExtensionCommandContext, runtime: 
     if (!source) throw new Error(`Project MCP server ${id} is unavailable`);
     await runtime.putProjectOverride(id, { ...source, catalog, catalogUpdatedAt: new Date().toISOString() });
   }
-  ctx.ui.notify(`Refreshed ${catalog.length} tools from ${id}. Reloading MCP tools.`, "info");
-  await ctx.reload();
+  if (reload) {
+    ctx.ui.notify(`Refreshed ${catalog.length} tools from ${id}. Reloading MCP tools.`, "info");
+    await ctx.reload();
+  }
+  return catalog.length;
 }
 
-async function loginServer(pi: ExtensionAPI, id: string, ctx: ExtensionCommandContext, runtime: McpRuntime, clients: McpClients): Promise<void> {
+async function loginServer(pi: ExtensionAPI, id: string, ctx: ExtensionCommandContext, runtime: McpRuntime, clients: McpClients, notify = true): Promise<void> {
   const server = runtime.resolved.servers[id];
   if (!server) throw new Error(`Unknown MCP server: ${id}`);
   if (!server.oauth) throw new Error(`OAuth is not enabled for ${id}`);
   const callback = await listenForOAuthCallback();
   try {
-    ctx.ui.notify("Your browser will open for MCP authorization.", "info");
+    if (notify) ctx.ui.notify("Your browser will open for MCP authorization.", "info");
     await clients.login(id, server, callback.result);
-    ctx.ui.notify(`Authorized ${id}`, "info");
+    if (notify) ctx.ui.notify(`Authorized ${id}`, "info");
   } finally { await callback.close(); }
 }
 
-async function configureTools(id: string, ctx: ExtensionCommandContext, runtime: McpRuntime): Promise<boolean> {
+async function configureTools(id: string, ctx: ExtensionCommandContext, runtime: McpRuntime, notify = true): Promise<boolean> {
   const server = runtime.resolved.servers[id];
-  if (!server?.catalog?.length) { ctx.ui.notify("Refresh this server's tool catalog first.", "warning"); return false; }
+  if (!server?.catalog?.length) { if (notify) ctx.ui.notify("Refresh this server's tool catalog first.", "warning"); return false; }
   const tool = await ctx.ui.select("Tool", server.catalog.map(item => item.name));
   if (!tool) return false;
   const mode = await ctx.ui.select("Activation", ["automatic", "on-demand", "disabled"]) as ToolMode | undefined;
@@ -120,7 +124,7 @@ async function configureTools(id: string, ctx: ExtensionCommandContext, runtime:
   return true;
 }
 
-async function addCredential(ctx: ExtensionCommandContext, runtime: McpRuntime): Promise<boolean> {
+async function addCredential(ctx: ExtensionCommandContext, runtime: McpRuntime, notify = true): Promise<boolean> {
   const name = (await ctx.ui.input("Global credential profile name", "mcp-token"))?.trim();
   if (!name) return false;
   const kind = await ctx.ui.select("Credential source", ["Environment variable", "Command"]);
@@ -140,19 +144,19 @@ async function addCredential(ctx: ExtensionCommandContext, runtime: McpRuntime):
     runtime.global.credentials[name] = { source: { command } };
   }
   await runtime.save("global");
-  ctx.ui.notify(`Saved global credential profile ${name}`, "info");
+  if (notify) ctx.ui.notify(`Saved global credential profile ${name}`, "info");
   return true;
 }
 
-async function manageCredential(ctx: ExtensionCommandContext, runtime: McpRuntime): Promise<boolean> {
+async function manageCredential(ctx: ExtensionCommandContext, runtime: McpRuntime, notify = true): Promise<boolean> {
   const credentials = runtime.global.credentials;
   if (!credentials) {
-    ctx.ui.notify("No global credential profiles configured.", "info");
+    if (notify) ctx.ui.notify("No global credential profiles configured.", "info");
     return false;
   }
   const names = Object.keys(credentials);
   if (!names.length) {
-    ctx.ui.notify("No global credential profiles configured.", "info");
+    if (notify) ctx.ui.notify("No global credential profiles configured.", "info");
     return false;
   }
   const name = await ctx.ui.select("Credential profile", names);
@@ -162,7 +166,7 @@ async function manageCredential(ctx: ExtensionCommandContext, runtime: McpRuntim
   const action = await ctx.ui.select(name, ["Test", "Remove", "Back"]);
   if (action === "Test") {
     await resolveSecret(credential.source);
-    ctx.ui.notify(`Credential ${name} resolved successfully.`, "info");
+    if (notify) ctx.ui.notify(`Credential ${name} resolved successfully.`, "info");
   } else if (action === "Remove" && await ctx.ui.confirm("Remove credential profile?", name)) {
     delete credentials[name];
     await runtime.save("global");
@@ -172,31 +176,91 @@ async function manageCredential(ctx: ExtensionCommandContext, runtime: McpRuntim
 }
 
 async function interactive(pi: ExtensionAPI, ctx: ExtensionCommandContext, runtime: McpRuntime, clients: McpClients): Promise<void> {
+  let message: string | undefined;
+  const reloadAfter = async (title: string, result: string): Promise<void> => {
+    await showManagerResult(ctx, title, result);
+    await ctx.reload();
+  };
+
   while (true) {
-    const servers = Object.entries(runtime.resolved.servers);
-    const action = await ctx.ui.select("MCP Manager", ["Add server", "Manage server", "Add credential profile", "Manage credential profile", "Close"]);
-    if (!action || action === "Close") return;
-    if (action === "Add server") { if (await addServer(ctx, runtime)) { await ctx.reload(); return; } continue; }
-    if (action === "Add credential profile") { if (await addCredential(ctx, runtime)) { await ctx.reload(); return; } continue; }
-    if (action === "Manage credential profile") { if (await manageCredential(ctx, runtime)) { await ctx.reload(); return; } continue; }
-    if (!servers.length) { ctx.ui.notify("No MCP servers configured.", "info"); continue; }
-    const id = await ctx.ui.select("Server", servers.map(([key, server]) => `${key} — ${stateLabel(serverState(key, server, runtime.auth, clients.runtimeState(key)))}`));
-    if (!id) continue;
-    const [serverId] = id.split(" — ");
-    if (!serverId) continue;
-    const operation = await ctx.ui.select(serverId, ["Refresh tools", "Configure tool", "Edit", "Duplicate", "Login with OAuth", "Logout", runtime.resolved.servers[serverId]?.enabled === false ? "Enable" : "Disable", "Disconnect", "Remove override/configuration", "Back"]);
-    if (!operation || operation === "Back") continue;
-    if (operation === "Refresh tools") { await refreshServer(serverId, ctx, runtime, clients); return; }
-    if (operation === "Configure tool") { if (await configureTools(serverId, ctx, runtime)) { await ctx.reload(); return; } }
-    else if (operation === "Edit") { if (await editServer(serverId, ctx, runtime)) { await ctx.reload(); return; } }
-    else if (operation === "Duplicate") { if (await duplicateServer(serverId, ctx, runtime)) { await ctx.reload(); return; } }
-    else if (operation === "Login with OAuth") await loginServer(pi, serverId, ctx, runtime, clients);
-    else if (operation === "Logout") { await runtime.auth.clear(serverId); await clients.disconnect(serverId); ctx.ui.notify(`Logged out of ${serverId}`, "info"); }
-    else if (operation === "Disconnect") await clients.disconnect(serverId);
-    else if (operation === "Enable" || operation === "Disable") { await runtime.setEnabled(runtime.storageScope(serverId), serverId, operation === "Enable"); await ctx.reload(); return; }
-    else if (operation === "Remove override/configuration") {
-      const scope = runtime.storageScope(serverId);
-      if (await ctx.ui.confirm("Remove MCP configuration?", `${serverId} (${scope})`)) { await runtime.removeServer(scope, serverId); await ctx.reload(); return; }
+    const selection = await showServerList(ctx, runtime, clients, message);
+    message = undefined;
+    if (!selection || selection === "close") return;
+    if (selection === "add") {
+      try {
+        if (await addServer(ctx, runtime, false)) { await reloadAfter("MCP Servers", "Server added successfully."); return; }
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error);
+      }
+      continue;
+    }
+    if (selection === "credentials") {
+      try {
+        const operation = await showCredentialMenu(ctx);
+        if (operation === "add" && await addCredential(ctx, runtime, false)) { await reloadAfter("Credential Profiles", "Credential profile saved."); return; }
+        if (operation === "manage" && await manageCredential(ctx, runtime, false)) { await reloadAfter("Credential Profiles", "Credential profile removed."); return; }
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error);
+      }
+      continue;
+    }
+    if (!selection.startsWith("server:")) continue;
+    const serverId = selection.slice("server:".length);
+    let detailMessage: string | undefined;
+
+    while (runtime.resolved.servers[serverId]) {
+      const operation = await showServerDetails(ctx, runtime, clients, serverId, detailMessage);
+      detailMessage = undefined;
+      if (!operation || operation === "back") break;
+      try {
+        if (operation === "refresh") {
+          const count = await refreshServer(serverId, ctx, runtime, clients, false);
+          await reloadAfter(runtime.resolved.servers[serverId]?.name ?? serverId, `Refreshed ${count} tools.`);
+          return;
+        }
+        if (operation === "tools") {
+          if (!await configureTools(serverId, ctx, runtime, false)) { detailMessage = "Refresh this server's tool catalog first."; continue; }
+          await reloadAfter(runtime.resolved.servers[serverId]?.name ?? serverId, "Tool activation updated.");
+          return;
+        }
+        if (operation === "edit") {
+          if (await editServer(serverId, ctx, runtime)) { await reloadAfter(runtime.resolved.servers[serverId]?.name ?? serverId, "Connection updated."); return; }
+          continue;
+        }
+        if (operation === "duplicate") {
+          if (await duplicateServer(serverId, ctx, runtime)) { await reloadAfter(runtime.resolved.servers[serverId]?.name ?? serverId, "Server duplicated."); return; }
+          continue;
+        }
+        if (operation === "login") {
+          await showManagerResult(ctx, runtime.resolved.servers[serverId]?.name ?? serverId, "Your browser will open for MCP authorization.");
+          await loginServer(pi, serverId, ctx, runtime, clients, false);
+          detailMessage = "OAuth login completed.";
+          continue;
+        }
+        if (operation === "logout") {
+          await runtime.auth.clear(serverId);
+          await clients.disconnect(serverId);
+          detailMessage = "OAuth credentials removed.";
+          continue;
+        }
+        if (operation === "toggle") {
+          const server = runtime.resolved.servers[serverId];
+          if (!server) break;
+          await runtime.setEnabled(runtime.storageScope(serverId), serverId, !server.enabled);
+          await reloadAfter(server.name, server.enabled ? "Server disabled." : "Server enabled.");
+          return;
+        }
+        if (operation === "remove") {
+          const scope = runtime.storageScope(serverId);
+          if (await ctx.ui.confirm("Remove MCP configuration?", `${serverId} (${scope})`)) {
+            await runtime.removeServer(scope, serverId);
+            await reloadAfter("MCP Servers", "Server configuration removed.");
+            return;
+          }
+        }
+      } catch (error) {
+        detailMessage = error instanceof Error ? error.message : String(error);
+      }
     }
   }
 }
@@ -215,7 +279,7 @@ export function registerCommands(pi: ExtensionAPI, runtime: McpRuntime, clients:
         }
         if (action === "add") { if (!ctx.hasUI) throw new Error("/mcp add requires interactive UI"); if (await addServer(ctx, runtime)) { await ctx.reload(); return; } return; }
         if (!id) throw new Error(`Usage: /mcp ${action} <server-id>`);
-        if (action === "refresh") return await refreshServer(id, ctx, runtime, clients);
+        if (action === "refresh") { await refreshServer(id, ctx, runtime, clients); return; }
         if (action === "login") return await loginServer(pi, id, ctx, runtime, clients);
         if (action === "logout") { await runtime.auth.clear(id); await clients.disconnect(id); return; }
         if (action === "disconnect") return await clients.disconnect(id);
