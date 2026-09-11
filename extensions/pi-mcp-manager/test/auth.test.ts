@@ -10,16 +10,14 @@ test("OAuth provider persists and invalidates authorization state", async () => 
   const directory = await mkdtemp(join(tmpdir(), "pi-mcp-auth-"));
   try {
     const path = join(directory, "auth.json");
-    const store = new AuthStore(path);
-    await store.load();
+    const store = await AuthStore.open(path);
     const provider = new PersistentOAuthProvider("server", store, new URL("http://127.0.0.1/callback"), () => undefined);
     await provider.saveCodeVerifier("verifier");
     await provider.saveTokens({ access_token: "secret", token_type: "bearer" });
     assert.equal(provider.codeVerifier(), "verifier");
     assert.equal(provider.tokens()?.access_token, "secret");
 
-    const loaded = new AuthStore(path);
-    await loaded.load();
+    const loaded = await AuthStore.open(path);
     assert.equal(loaded.get("server").tokens?.access_token, "secret");
     await loaded.clear("server", "tokens");
     assert.equal(loaded.get("server").tokens, undefined);

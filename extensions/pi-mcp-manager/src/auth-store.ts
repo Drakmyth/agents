@@ -12,17 +12,19 @@ export interface ServerAuth {
 interface AuthFile { version: 1; servers: Record<string, ServerAuth> }
 
 export class AuthStore {
-  private data: AuthFile = { version: 1, servers: {} };
-  constructor(private readonly path: string) {}
-  async load(): Promise<void> {
+  private constructor(private readonly path: string, private readonly data: AuthFile) {}
+
+  static async open(path: string): Promise<AuthStore> {
     try {
-      const parsed = JSON.parse(await readFile(this.path, "utf8")) as AuthFile;
+      const parsed = JSON.parse(await readFile(path, "utf8")) as AuthFile;
       if (parsed.version !== 1 || !parsed.servers) throw new Error("Unsupported MCP auth file");
-      this.data = parsed;
+      return new AuthStore(path, parsed);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      return new AuthStore(path, { version: 1, servers: {} });
     }
   }
+
   get(serverId: string): ServerAuth { return this.data.servers[serverId] ?? {}; }
   async patch(serverId: string, patch: Partial<ServerAuth>): Promise<void> {
     this.data.servers[serverId] = { ...this.get(serverId), ...patch };

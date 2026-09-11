@@ -7,8 +7,8 @@ export async function listenForOAuthCallback(signal?: AbortSignal): Promise<{
   result: Promise<{ code: string; state: string | null }>;
   close: () => Promise<void>;
 }> {
-  let resolve!: (value: { code: string; state: string | null }) => void;
-  let reject!: (error: Error) => void;
+  let resolve = (_value: { code: string; state: string | null }): void => {};
+  let reject = (_error: Error): void => {};
   const result = new Promise<{ code: string; state: string | null }>((yes, no) => { resolve = yes; reject = no; });
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", OAUTH_CALLBACK_URL);

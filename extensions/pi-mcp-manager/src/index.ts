@@ -9,9 +9,9 @@ export default function piMcpManager(pi: ExtensionAPI): void {
   let clients: McpClients | undefined;
 
   pi.on("session_start", async (_event, ctx) => {
-    const runtime = new McpRuntime();
+    let runtime: McpRuntime;
     try {
-      await runtime.load(ctx);
+      runtime = await McpRuntime.create(ctx);
     } catch (error) {
       ctx.ui.notify(`MCP configuration error: ${error instanceof Error ? error.message : String(error)}`, "error");
       return;

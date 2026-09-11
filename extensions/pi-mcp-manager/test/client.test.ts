@@ -30,7 +30,7 @@ async function mockServer() {
 
 test("Streamable HTTP client discovers and calls MCP tools", async () => {
   const server = await mockServer();
-  const clients = new McpClients(new AuthStore("unused"), {}, new URL("http://127.0.0.1:33418/callback"), () => undefined);
+  const clients = new McpClients(await AuthStore.open("unused"), {}, new URL("http://127.0.0.1:33418/callback"), () => undefined);
   try {
     const config = resolveConfig({ ...EMPTY_GLOBAL_CONFIG, servers: { test: { url: server.url } } }).servers.test!;
     const tools = await clients.refresh("test", config);

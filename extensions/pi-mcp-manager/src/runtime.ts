@@ -2,24 +2,27 @@ import { CONFIG_DIR_NAME, type ExtensionContext } from "@earendil-works/pi-codin
 import { configPaths, readGlobalConfig, readProjectConfig, resolveConfig, validateGlobalConfig, validateProjectConfig, writeJsonAtomic } from "./config.js";
 import { AuthStore } from "./auth-store.js";
 import type { GlobalConfig, ProjectConfig, ProjectServerOverride, ResolvedConfig, StoredServer, ToolMode } from "./model.js";
-import { EMPTY_GLOBAL_CONFIG, EMPTY_PROJECT_CONFIG } from "./model.js";
+import { EMPTY_PROJECT_CONFIG } from "./model.js";
 
 export type ConfigScope = "global" | "project";
+type ConfigPaths = ReturnType<typeof configPaths>;
 
 export class McpRuntime {
-  global: GlobalConfig = structuredClone(EMPTY_GLOBAL_CONFIG);
-  project: ProjectConfig = structuredClone(EMPTY_PROJECT_CONFIG);
-  resolved: ResolvedConfig = resolveConfig(this.global);
-  paths!: ReturnType<typeof configPaths>;
-  auth!: AuthStore;
+  private constructor(
+    readonly paths: ConfigPaths,
+    readonly auth: AuthStore,
+    public global: GlobalConfig,
+    public project: ProjectConfig,
+    public resolved: ResolvedConfig,
+  ) {}
 
-  async load(ctx: ExtensionContext): Promise<void> {
-    this.paths = configPaths(ctx.cwd, CONFIG_DIR_NAME);
-    this.global = await readGlobalConfig(this.paths.global);
-    this.project = ctx.isProjectTrusted() ? await readProjectConfig(this.paths.project) : structuredClone(EMPTY_PROJECT_CONFIG);
-    this.resolved = resolveConfig(this.global, this.project);
-    this.auth = new AuthStore(this.paths.auth);
-    await this.auth.load();
+  static async create(ctx: ExtensionContext): Promise<McpRuntime> {
+    const paths = configPaths(ctx.cwd, CONFIG_DIR_NAME);
+    const global = await readGlobalConfig(paths.global);
+    const project = ctx.isProjectTrusted() ? await readProjectConfig(paths.project) : structuredClone(EMPTY_PROJECT_CONFIG);
+    const resolved = resolveConfig(global, project);
+    const auth = await AuthStore.open(paths.auth);
+    return new McpRuntime(paths, auth, global, project, resolved);
   }
 
   async save(scope: ConfigScope): Promise<void> {

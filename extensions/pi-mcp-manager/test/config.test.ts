@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { resolveConfig, validateProjectConfig } from "../src/config.js";
 import { EMPTY_GLOBAL_CONFIG, EMPTY_PROJECT_CONFIG } from "../src/model.js";
 import { toolName } from "../src/names.js";
@@ -30,14 +33,25 @@ test("resolved servers contain runtime defaults", () => {
   });
 });
 
-test("storage scope selects the most specific stored entry", () => {
-  const runtime = new McpRuntime();
-  runtime.global.servers = { global: { url: "https://example.test/mcp" }, overridden: { url: "https://example.test/mcp" } };
-  runtime.project.servers = { overridden: { enabled: false }, project: { url: "https://project.test/mcp" } };
-  assert.equal(runtime.storageScope("global"), "global");
-  assert.equal(runtime.storageScope("overridden"), "project");
-  assert.equal(runtime.storageScope("project"), "project");
-  assert.throws(() => runtime.storageScope("missing"), /Unknown MCP server/);
+test("runtime factory initializes storage and selects the most specific scope", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "pi-mcp-runtime-"));
+  const previous = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = join(directory, "global");
+  try {
+    const projectDir = join(directory, "project", ".pi");
+    await mkdir(projectDir, { recursive: true });
+    await mkdir(process.env.PI_CODING_AGENT_DIR, { recursive: true });
+    await writeFile(join(process.env.PI_CODING_AGENT_DIR, "mcp.json"), JSON.stringify({ ...EMPTY_GLOBAL_CONFIG, servers: { global: { url: "https://example.test/mcp" }, overridden: { url: "https://example.test/mcp" } } }));
+    await writeFile(join(projectDir, "mcp.json"), JSON.stringify({ ...EMPTY_PROJECT_CONFIG, servers: { overridden: { enabled: false }, project: { url: "https://project.test/mcp" } } }));
+    const runtime = await McpRuntime.create({ cwd: join(directory, "project"), isProjectTrusted: () => true } as never);
+    assert.equal(runtime.storageScope("global"), "global");
+    assert.equal(runtime.storageScope("overridden"), "project");
+    assert.equal(runtime.storageScope("project"), "project");
+    assert.throws(() => runtime.storageScope("missing"), /Unknown MCP server/);
+  } finally {
+    if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previous;
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("project credential profiles are rejected", () => {
