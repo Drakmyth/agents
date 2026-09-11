@@ -44,6 +44,7 @@ Omit the trailer when `agent.coAuthor` is unset. Never infer an identity from th
    - an imperative, outcome-focused title, preferably no more than 72 characters;
    - a blank line;
    - 3–6 concise bullets describing the important final outcomes;
+   - only printable ASCII characters in the generated title and bullets, using straight quotes, apostrophes, and hyphens instead of typographic punctuation;
    - when configured, a blank line followed by the co-author trailer.
 7. Generate one final candidate without alternatives. Avoid validation details, commit hashes, pull-request mechanics, and implementation chronology unless the user explicitly asks for them.
 8. Attempt to copy the exact message to the clipboard using the first available platform utility:
