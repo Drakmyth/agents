@@ -3,16 +3,16 @@ import type { ResolvedServer } from "./model.js";
 
 export type ServerState = "ready" | "needs-refresh" | "login-needed" | "unavailable" | "disabled" | "checking";
 
-export interface ServerActivity {
-  checking: boolean;
-  failed: boolean;
+export interface ServerRuntimeState {
+  inFlight: number;
+  lastRequestFailed: boolean;
 }
 
-export function serverState(serverId: string, server: ResolvedServer, auth: Pick<AuthStore, "get">, activity?: ServerActivity): ServerState {
+export function serverState(serverId: string, server: ResolvedServer, auth: Pick<AuthStore, "get">, runtime?: ServerRuntimeState): ServerState {
   if (!server.enabled) return "disabled";
-  if (activity?.checking) return "checking";
+  if (runtime?.inFlight) return "checking";
   if (server.oauth && !auth.get(serverId).tokens?.access_token) return "login-needed";
-  if (activity?.failed) return "unavailable";
+  if (runtime?.lastRequestFailed) return "unavailable";
   if (!server.catalog.length) return "needs-refresh";
   return "ready";
 }

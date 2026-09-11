@@ -5,43 +5,42 @@ import type { ResolvedServer, CachedTool, CredentialProfile } from "./model.js";
 import { resolveHeaders } from "./credentials.js";
 import { AuthStore } from "./auth-store.js";
 import { PersistentOAuthProvider } from "./oauth.js";
-import type { ServerActivity } from "./status.js";
+import type { ServerRuntimeState } from "./status.js";
 
 interface Connection { client: Client; transport: StreamableHTTPClientTransport; secrets: string[] }
-interface Activity { active: number; failed: boolean }
 
 export class McpClients {
   private readonly connections = new Map<string, Connection>();
-  private readonly activities = new Map<string, Activity>();
+  private readonly runtimeStates = new Map<string, ServerRuntimeState>();
   constructor(
     private readonly auth: AuthStore,
     private readonly profiles: Record<string, CredentialProfile>,
     private readonly redirectUrl: URL,
     private readonly onOAuthRedirect: (serverId: string, url: URL) => void | Promise<void>,
-    private readonly onActivityChange?: (serverId: string, activity: ServerActivity) => void,
+    private readonly onRuntimeStateChange?: (serverId: string, runtime: ServerRuntimeState) => void,
   ) {}
 
-  activity(serverId: string): ServerActivity | undefined {
-    const activity = this.activities.get(serverId);
-    return activity ? { checking: activity.active > 0, failed: activity.failed } : undefined;
+  runtimeState(serverId: string): ServerRuntimeState | undefined {
+    const runtime = this.runtimeStates.get(serverId);
+    return runtime ? { ...runtime } : undefined;
   }
 
   private async track<T>(serverId: string, signal: AbortSignal | undefined, operation: () => Promise<T>): Promise<T> {
-    const activity = this.activities.get(serverId) ?? { active: 0, failed: false };
-    activity.active++;
-    activity.failed = false;
-    this.activities.set(serverId, activity);
-    this.onActivityChange?.(serverId, { checking: true, failed: false });
+    const runtime = this.runtimeStates.get(serverId) ?? { inFlight: 0, lastRequestFailed: false };
+    runtime.inFlight++;
+    runtime.lastRequestFailed = false;
+    this.runtimeStates.set(serverId, runtime);
+    this.onRuntimeStateChange?.(serverId, { ...runtime });
     try {
       const result = await operation();
-      activity.failed = false;
+      runtime.lastRequestFailed = false;
       return result;
     } catch (error) {
-      activity.failed = !signal?.aborted;
+      runtime.lastRequestFailed = !signal?.aborted;
       throw error;
     } finally {
-      activity.active--;
-      this.onActivityChange?.(serverId, { checking: activity.active > 0, failed: activity.failed });
+      runtime.inFlight--;
+      this.onRuntimeStateChange?.(serverId, { ...runtime });
     }
   }
 

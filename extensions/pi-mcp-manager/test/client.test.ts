@@ -44,14 +44,14 @@ test("Streamable HTTP client discovers and calls MCP tools", async () => {
 });
 
 test("client activity records unavailable servers", async () => {
-  const updates: Array<{ serverId: string; checking: boolean; failed: boolean }> = [];
-  const clients = new McpClients(await AuthStore.open("unused"), {}, new URL("http://127.0.0.1:33418/callback"), () => undefined, (serverId, activity) => updates.push({ serverId, ...activity }));
+  const updates: Array<{ serverId: string; inFlight: number; lastRequestFailed: boolean }> = [];
+  const clients = new McpClients(await AuthStore.open("unused"), {}, new URL("http://127.0.0.1:33418/callback"), () => undefined, (serverId, runtime) => updates.push({ serverId, ...runtime }));
   const config = resolveConfig({ ...EMPTY_GLOBAL_CONFIG, servers: { test: { url: "http://127.0.0.1:1/mcp" } } }).servers.test!;
 
   await assert.rejects(clients.refresh("test", config));
-  assert.deepEqual(clients.activity("test"), { checking: false, failed: true });
+  assert.deepEqual(clients.runtimeState("test"), { inFlight: 0, lastRequestFailed: true });
   assert.deepEqual(updates, [
-    { serverId: "test", checking: true, failed: false },
-    { serverId: "test", checking: false, failed: true },
+    { serverId: "test", inFlight: 1, lastRequestFailed: false },
+    { serverId: "test", inFlight: 0, lastRequestFailed: true },
   ]);
 });

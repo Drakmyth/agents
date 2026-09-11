@@ -18,7 +18,7 @@ export default function piMcpManager(pi: ExtensionAPI): void {
       return;
     }
     const updateStatus = (): void => {
-      const states = Object.entries(runtime.resolved.servers).map(([id, server]) => serverState(id, server, runtime.auth, clients?.activity(id)));
+      const states = Object.entries(runtime.resolved.servers).map(([id, server]) => serverState(id, server, runtime.auth, clients?.runtimeState(id)));
       ctx.ui.setStatus("drakmyth.pi-mcp-manager", attentionStatus(states));
     };
     clients = new McpClients(
