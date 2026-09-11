@@ -1,4 +1,5 @@
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import { formatEpoch, thresholdColor } from "./format.js";
 
 const USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
 
@@ -74,26 +75,9 @@ export async function getUsage(ctx: ExtensionContext, signal: AbortSignal): Prom
   return await response.json() as UsageResponse;
 }
 
-function thresholdColor(value: number): "error" | "warning" | "dim" {
-  if (value > 90) return "error";
-  if (value > 70) return "warning";
-  return "dim";
-}
-
 function formatRemaining(used: number, theme: Theme): string {
   const remaining = Math.max(0, Math.min(100, 100 - used));
   return theme.fg(thresholdColor(used), `${remaining.toFixed(0)}% remaining`);
-}
-
-export function formatEpoch(seconds?: number): string {
-  if (!seconds) return "unknown";
-  const date = new Date(seconds * 1000);
-  const offsetMinutes = -date.getTimezoneOffset();
-  const shifted = new Date(date.getTime() + offsetMinutes * 60_000);
-  const sign = offsetMinutes >= 0 ? "+" : "-";
-  const hours = String(Math.floor(Math.abs(offsetMinutes) / 60)).padStart(2, "0");
-  const minutes = String(Math.abs(offsetMinutes) % 60).padStart(2, "0");
-  return shifted.toISOString().replace("Z", `${sign}${hours}:${minutes}`);
 }
 
 export function buildQuotaLines(usage: UsageResponse | undefined, theme: Theme): string[] {

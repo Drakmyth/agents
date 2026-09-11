@@ -1,24 +1,11 @@
 import type { Usage } from "@earendil-works/pi-ai";
-import type { ExtensionAPI, ExtensionContext, ReadonlyFooterDataProvider, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ReadonlyFooterDataProvider, Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth, type TUI } from "@earendil-works/pi-tui";
+import { formatTokens, thresholdColor } from "./format.js";
 import { buildQuotaLines, getUsage, type UsageResponse } from "./quota.js";
 
 const REFRESH_INTERVAL_MS = 30_000;
 const REQUEST_TIMEOUT_MS = 10_000;
-
-function formatTokens(value: number): string {
-  if (value < 1_000) return `${value}`;
-  if (value < 10_000) return `${(value / 1_000).toFixed(1)}k`;
-  if (value < 1_000_000) return `${Math.round(value / 1_000)}k`;
-  if (value < 10_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-  return `${Math.round(value / 1_000_000)}M`;
-}
-
-function thresholdColor(value: number): ThemeColor {
-  if (value > 90) return "error";
-  if (value > 70) return "warning";
-  return "dim";
-}
 
 function buildPathLine(ctx: ExtensionContext, theme: Theme, footerData: ReadonlyFooterDataProvider, width: number): string {
   const branch = footerData.getGitBranch();
