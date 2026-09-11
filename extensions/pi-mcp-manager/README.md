@@ -44,6 +44,8 @@ Run `/mcp` for the interactive manager. Useful direct commands include:
 
 Adding a server, refreshing its catalog, or changing activation settings reloads pi's resources so the updated tool definitions are immediately usable.
 
+Server states describe practical availability rather than whether an HTTP transport is currently open: `ready`, `needs refresh`, `login needed`, `unavailable`, `disabled`, or `checking`. The footer remains clear when no server needs attention.
+
 ## Files
 
 - Global configuration: `~/.pi/agent/mcp.json`, or under `PI_CODING_AGENT_DIR`.

@@ -5,17 +5,44 @@ import type { ResolvedServer, CachedTool, CredentialProfile } from "./model.js";
 import { resolveHeaders } from "./credentials.js";
 import { AuthStore } from "./auth-store.js";
 import { PersistentOAuthProvider } from "./oauth.js";
+import type { ServerRuntimeState } from "./status.js";
 
 interface Connection { client: Client; transport: StreamableHTTPClientTransport; secrets: string[] }
 
 export class McpClients {
   private readonly connections = new Map<string, Connection>();
+  private readonly runtimeStates = new Map<string, ServerRuntimeState>();
   constructor(
     private readonly auth: AuthStore,
     private readonly profiles: Record<string, CredentialProfile>,
     private readonly redirectUrl: URL,
     private readonly onOAuthRedirect: (serverId: string, url: URL) => void | Promise<void>,
+    private readonly onRuntimeStateChange?: (serverId: string, runtime: ServerRuntimeState) => void,
   ) {}
+
+  runtimeState(serverId: string): ServerRuntimeState | undefined {
+    const runtime = this.runtimeStates.get(serverId);
+    return runtime ? { ...runtime } : undefined;
+  }
+
+  private async track<T>(serverId: string, signal: AbortSignal | undefined, operation: () => Promise<T>): Promise<T> {
+    const runtime = this.runtimeStates.get(serverId) ?? { inFlight: 0, lastRequestFailed: false };
+    runtime.inFlight++;
+    runtime.lastRequestFailed = false;
+    this.runtimeStates.set(serverId, runtime);
+    this.onRuntimeStateChange?.(serverId, { ...runtime });
+    try {
+      const result = await operation();
+      runtime.lastRequestFailed = false;
+      return result;
+    } catch (error) {
+      runtime.lastRequestFailed = !signal?.aborted;
+      throw error;
+    } finally {
+      runtime.inFlight--;
+      this.onRuntimeStateChange?.(serverId, { ...runtime });
+    }
+  }
 
   createOAuthProvider(serverId: string): PersistentOAuthProvider {
     return new PersistentOAuthProvider(serverId, this.auth, this.redirectUrl, url => this.onOAuthRedirect(serverId, url));
@@ -43,52 +70,58 @@ export class McpClients {
   }
 
   async login(serverId: string, server: ResolvedServer, receiveCode: Promise<{ code: string; state: string | null }>, signal?: AbortSignal): Promise<void> {
-    await this.disconnect(serverId);
-    const provider = this.createOAuthProvider(serverId);
-    const { headers } = await resolveHeaders(server.headers, this.profiles, signal);
-    const transport = new StreamableHTTPClientTransport(new URL(server.url), { requestInit: { headers }, authProvider: provider });
-    const client = new Client({ name: "pi-mcp-manager", version: "0.1.0" });
-    try {
-      await client.connect(transport, { signal });
-      await transport.close();
-      return;
-    } catch (error) {
-      if (!(error instanceof UnauthorizedError)) { await transport.close().catch(() => undefined); throw error; }
-    }
-    const callback = await receiveCode;
-    if (!provider.verifyState(callback.state)) throw new Error("OAuth callback state did not match");
-    await transport.finishAuth(callback.code);
-    await transport.close().catch(() => undefined);
-    await this.connect(serverId, server, signal);
+    return this.track(serverId, signal, async () => {
+      await this.disconnect(serverId);
+      const provider = this.createOAuthProvider(serverId);
+      const { headers } = await resolveHeaders(server.headers, this.profiles, signal);
+      const transport = new StreamableHTTPClientTransport(new URL(server.url), { requestInit: { headers }, authProvider: provider });
+      const client = new Client({ name: "pi-mcp-manager", version: "0.1.0" });
+      try {
+        await client.connect(transport, { signal });
+        await transport.close();
+        return;
+      } catch (error) {
+        if (!(error instanceof UnauthorizedError)) { await transport.close().catch(() => undefined); throw error; }
+      }
+      const callback = await receiveCode;
+      if (!provider.verifyState(callback.state)) throw new Error("OAuth callback state did not match");
+      await transport.finishAuth(callback.code);
+      await transport.close().catch(() => undefined);
+      await this.connect(serverId, server, signal);
+    });
   }
 
   async refresh(serverId: string, server: ResolvedServer, signal?: AbortSignal): Promise<CachedTool[]> {
-    const { client } = await this.connect(serverId, server, signal);
-    const tools: CachedTool[] = [];
-    let cursor: string | undefined;
-    do {
-      const result = await client.listTools(cursor ? { cursor } : undefined, { signal });
-      for (const tool of result.tools) {
-        tools.push({
-          name: tool.name,
-          title: tool.annotations?.title,
-          description: tool.description,
-          inputSchema: tool.inputSchema,
-        });
-      }
-      cursor = result.nextCursor;
-    } while (cursor);
-    return tools;
+    return this.track(serverId, signal, async () => {
+      const { client } = await this.connect(serverId, server, signal);
+      const tools: CachedTool[] = [];
+      let cursor: string | undefined;
+      do {
+        const result = await client.listTools(cursor ? { cursor } : undefined, { signal });
+        for (const tool of result.tools) {
+          tools.push({
+            name: tool.name,
+            title: tool.annotations?.title,
+            description: tool.description,
+            inputSchema: tool.inputSchema,
+          });
+        }
+        cursor = result.nextCursor;
+      } while (cursor);
+      return tools;
+    });
   }
 
   async call(serverId: string, server: ResolvedServer, name: string, args: Record<string, unknown>, signal?: AbortSignal) {
-    try {
-      const { client } = await this.connect(serverId, server, signal);
-      return await client.callTool({ name, arguments: args }, undefined, { signal });
-    } catch (error) {
-      await this.disconnect(serverId);
-      throw error;
-    }
+    return this.track(serverId, signal, async () => {
+      try {
+        const { client } = await this.connect(serverId, server, signal);
+        return await client.callTool({ name, arguments: args }, undefined, { signal });
+      } catch (error) {
+        await this.disconnect(serverId);
+        throw error;
+      }
+    });
   }
 
   isConnected(serverId: string): boolean { return this.connections.has(serverId); }
