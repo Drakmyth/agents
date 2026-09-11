@@ -13,9 +13,10 @@ export async function resolveSecret(source: SecretSource, signal?: AbortSignal):
     if (!value) throw new Error(`Environment variable ${source.env} is not set`);
     return value;
   }
-  if (!source.command.length || !source.command[0]) throw new Error("Credential command is empty");
+  const [executable, ...args] = source.command;
+  if (!executable) throw new Error("Credential command is empty");
   return new Promise((resolve, reject) => {
-    const child = spawn(source.command[0]!, source.command.slice(1), { shell: false, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(executable, args, { shell: false, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
     const chunks: Buffer[] = [];
     let size = 0;
     const timeout = setTimeout(() => child.kill(), source.timeoutMs ?? 10_000);
