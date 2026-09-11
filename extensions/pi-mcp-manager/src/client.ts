@@ -1,7 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
-import type { ServerConfig, CachedTool, CredentialProfile } from "./model.js";
+import type { ResolvedServer, CachedTool, CredentialProfile } from "./model.js";
 import { resolveHeaders } from "./credentials.js";
 import { AuthStore } from "./auth-store.js";
 import { PersistentOAuthProvider } from "./oauth.js";
@@ -21,11 +21,10 @@ export class McpClients {
     return new PersistentOAuthProvider(serverId, this.auth, this.redirectUrl, url => this.onOAuthRedirect(serverId, url));
   }
 
-  async connect(serverId: string, server: ServerConfig, signal?: AbortSignal): Promise<Connection> {
+  async connect(serverId: string, server: ResolvedServer, signal?: AbortSignal): Promise<Connection> {
     const existing = this.connections.get(serverId);
     if (existing) return existing;
     const { headers, secrets } = await resolveHeaders(server.headers, this.profiles, signal);
-    if (!server.url) throw new Error(`MCP server ${serverId} has no URL`);
     const transport = new StreamableHTTPClientTransport(new URL(server.url), {
       requestInit: { headers },
       authProvider: server.oauth ? this.createOAuthProvider(serverId) : undefined,
@@ -43,8 +42,7 @@ export class McpClients {
     return connection;
   }
 
-  async login(serverId: string, server: ServerConfig, receiveCode: Promise<{ code: string; state: string | null }>, signal?: AbortSignal): Promise<void> {
-    if (!server.url) throw new Error(`MCP server ${serverId} has no URL`);
+  async login(serverId: string, server: ResolvedServer, receiveCode: Promise<{ code: string; state: string | null }>, signal?: AbortSignal): Promise<void> {
     await this.disconnect(serverId);
     const provider = this.createOAuthProvider(serverId);
     const { headers } = await resolveHeaders(server.headers, this.profiles, signal);
@@ -64,7 +62,7 @@ export class McpClients {
     await this.connect(serverId, server, signal);
   }
 
-  async refresh(serverId: string, server: ServerConfig, signal?: AbortSignal): Promise<CachedTool[]> {
+  async refresh(serverId: string, server: ResolvedServer, signal?: AbortSignal): Promise<CachedTool[]> {
     const { client } = await this.connect(serverId, server, signal);
     const tools: CachedTool[] = [];
     let cursor: string | undefined;
@@ -76,7 +74,7 @@ export class McpClients {
     return tools;
   }
 
-  async call(serverId: string, server: ServerConfig, name: string, args: Record<string, unknown>, signal?: AbortSignal) {
+  async call(serverId: string, server: ResolvedServer, name: string, args: Record<string, unknown>, signal?: AbortSignal) {
     try {
       const { client } = await this.connect(serverId, server, signal);
       return await client.callTool({ name, arguments: args }, undefined, { signal });

@@ -2,7 +2,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 import { McpClients } from "./client.js";
 import { McpRuntime, type ConfigScope } from "./runtime.js";
 import { listenForOAuthCallback } from "./oauth-callback.js";
-import type { ServerConfig, ToolMode } from "./model.js";
+import type { StoredServer, ToolMode } from "./model.js";
 import { resolveSecret } from "./credentials.js";
 
 async function openBrowser(pi: ExtensionAPI, url: URL): Promise<void> {
@@ -31,7 +31,7 @@ async function addServer(ctx: ExtensionCommandContext, runtime: McpRuntime): Pro
   const authOptions = ["OAuth", "Bearer token from environment", ...(profileNames.length ? ["Bearer token from credential profile"] : []), "None"];
   const auth = await ctx.ui.select("Authentication", authOptions);
   if (!auth) return false;
-  const server: ServerConfig = { name, url, enabled: true, toolMode, oauth: auth === "OAuth" };
+  const server: StoredServer = { name, url, enabled: true, toolMode, oauth: auth === "OAuth" };
   if (auth === "Bearer token from environment") {
     const variable = (await ctx.ui.input("Environment variable", "MCP_TOKEN"))?.trim();
     if (!variable) return false;

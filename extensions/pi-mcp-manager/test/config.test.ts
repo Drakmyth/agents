@@ -1,22 +1,36 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mergeConfig, validateConfig } from "../src/config.js";
-import { EMPTY_CONFIG } from "../src/model.js";
+import { mergeConfig, validateProjectConfig } from "../src/config.js";
+import { EMPTY_GLOBAL_CONFIG, EMPTY_PROJECT_CONFIG } from "../src/model.js";
 import { toolName } from "../src/names.js";
 import { redact } from "../src/credentials.js";
 
 test("project server fields and nested overrides merge over global configuration", () => {
-  const global = { ...EMPTY_CONFIG, credentials: { token: { source: { env: "TOKEN" } } }, servers: { api: { url: "https://global.test/mcp", tools: { read: "automatic" as const }, headers: { Accept: { value: "json" } } } } };
-  const project = { ...EMPTY_CONFIG, servers: { api: { url: "https://project.test/mcp", enabled: false, tools: { write: "disabled" as const } } } };
+  const global = { ...EMPTY_GLOBAL_CONFIG, credentials: { token: { source: { env: "TOKEN" } } }, servers: { api: { url: "https://global.test/mcp", tools: { read: "automatic" as const }, headers: { Accept: { value: "json" } } } } };
+  const project = { ...EMPTY_PROJECT_CONFIG, servers: { api: { enabled: false, tools: { write: "disabled" as const } } } };
   const merged = mergeConfig(global, project);
   assert.equal(merged.servers.api?.enabled, false);
-  assert.equal(merged.servers.api?.url, "https://project.test/mcp");
+  assert.equal(merged.servers.api?.url, "https://global.test/mcp");
   assert.deepEqual(merged.servers.api?.tools, { read: "automatic", write: "disabled" });
   assert.ok(merged.credentials.token);
 });
 
+test("resolved servers contain runtime defaults", () => {
+  const merged = mergeConfig({ ...EMPTY_GLOBAL_CONFIG, servers: { api: { url: "https://example.test/mcp" } } });
+  assert.deepEqual(merged.servers.api, {
+    url: "https://example.test/mcp",
+    name: "api",
+    enabled: true,
+    toolMode: "on-demand",
+    tools: {},
+    headers: {},
+    oauth: false,
+    catalog: [],
+  });
+});
+
 test("project credential profiles are rejected", () => {
-  assert.throws(() => validateConfig({ ...EMPTY_CONFIG, credentials: { bad: { source: { env: "X" } } } }, true), /cannot define/);
+  assert.throws(() => validateProjectConfig({ ...EMPTY_PROJECT_CONFIG, credentials: { bad: { source: { env: "X" } } } }), /cannot define/);
 });
 
 test("tool names are namespaced and collisions receive stable suffixes", () => {
