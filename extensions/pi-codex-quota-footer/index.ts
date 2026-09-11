@@ -119,7 +119,8 @@ export default function piCodexQuotaFooter(pi: ExtensionAPI): void {
   });
 
   pi.on("agent_settled", async (_event, ctx) => {
-    if (ctx.mode === "tui") await refresh(ctx);
+    if (ctx.mode !== "tui") return;
+    await refresh(ctx);
   });
 
   pi.on("session_shutdown", () => {
