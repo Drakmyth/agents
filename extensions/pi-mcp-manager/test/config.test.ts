@@ -30,6 +30,7 @@ test("resolved servers contain runtime defaults", () => {
     headers: {},
     oauth: false,
     catalog: [],
+    catalogUpdatedAt: undefined,
   });
 });
 

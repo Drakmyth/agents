@@ -42,3 +42,13 @@ test("Streamable HTTP client discovers and calls MCP tools", async () => {
     await server.close();
   }
 });
+
+test("client activity records unavailable servers", async () => {
+  let updates = 0;
+  const clients = new McpClients(await AuthStore.open("unused"), {}, new URL("http://127.0.0.1:33418/callback"), () => undefined, () => updates++);
+  const config = resolveConfig({ ...EMPTY_GLOBAL_CONFIG, servers: { test: { url: "http://127.0.0.1:1/mcp" } } }).servers.test!;
+
+  await assert.rejects(clients.refresh("test", config));
+  assert.deepEqual(clients.activity("test"), { checking: false, failed: true });
+  assert.equal(updates, 2);
+});

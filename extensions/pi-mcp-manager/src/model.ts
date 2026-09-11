@@ -31,6 +31,7 @@ export interface StoredServer {
   headers?: Record<string, HeaderValue>;
   oauth?: boolean;
   catalog?: CachedTool[];
+  catalogUpdatedAt?: string;
 }
 
 export type ProjectServerOverride = Partial<StoredServer>;
@@ -44,6 +45,7 @@ export interface ResolvedServer {
   headers: Record<string, HeaderValue>;
   oauth: boolean;
   catalog: CachedTool[];
+  catalogUpdatedAt?: string;
 }
 
 interface ConfigFile {

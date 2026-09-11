@@ -4,6 +4,7 @@ import { McpRuntime, type ConfigScope } from "./runtime.js";
 import { listenForOAuthCallback } from "./oauth-callback.js";
 import type { StoredServer, ToolMode } from "./model.js";
 import { resolveSecret } from "./credentials.js";
+import { serverState, stateLabel } from "./status.js";
 
 async function openBrowser(pi: ExtensionAPI, url: URL): Promise<void> {
   const command = process.platform === "win32" ? ["cmd", ["/c", "start", "", url.toString()]] as const
@@ -86,11 +87,11 @@ async function refreshServer(id: string, ctx: ExtensionCommandContext, runtime: 
   if (scope === "global") {
     const source = runtime.global.servers?.[id];
     if (!source) throw new Error(`Global MCP server ${id} is unavailable`);
-    await runtime.putGlobalServer(id, { ...source, catalog });
+    await runtime.putGlobalServer(id, { ...source, catalog, catalogUpdatedAt: new Date().toISOString() });
   } else {
     const source = runtime.project.servers?.[id];
     if (!source) throw new Error(`Project MCP server ${id} is unavailable`);
-    await runtime.putProjectOverride(id, { ...source, catalog });
+    await runtime.putProjectOverride(id, { ...source, catalog, catalogUpdatedAt: new Date().toISOString() });
   }
   ctx.ui.notify(`Refreshed ${catalog.length} tools from ${id}. Reloading MCP tools.`, "info");
   await ctx.reload();
@@ -179,7 +180,7 @@ async function interactive(pi: ExtensionAPI, ctx: ExtensionCommandContext, runti
     if (action === "Add credential profile") { if (await addCredential(ctx, runtime)) { await ctx.reload(); return; } continue; }
     if (action === "Manage credential profile") { if (await manageCredential(ctx, runtime)) { await ctx.reload(); return; } continue; }
     if (!servers.length) { ctx.ui.notify("No MCP servers configured.", "info"); continue; }
-    const id = await ctx.ui.select("Server", servers.map(([key, server]) => `${key} — ${server.enabled === false ? "disabled" : clients.isConnected(key) ? "connected" : "disconnected"}`));
+    const id = await ctx.ui.select("Server", servers.map(([key, server]) => `${key} — ${stateLabel(serverState(key, server, runtime.auth, clients.activity(key)))}`));
     if (!id) continue;
     const [serverId] = id.split(" — ");
     if (!serverId) continue;
@@ -209,7 +210,7 @@ export function registerCommands(pi: ExtensionAPI, runtime: McpRuntime, clients:
         const [action, id] = args.trim().split(/\s+/, 2);
         if (!action) { if (!ctx.hasUI) throw new Error("Use /mcp list in non-interactive mode"); await interactive(pi, ctx, runtime, clients); return; }
         if (action === "list") {
-          const lines = Object.entries(runtime.resolved.servers).map(([key, server]) => `${key}\t${server.enabled === false ? "disabled" : clients.isConnected(key) ? "connected" : "enabled"}\t${server.url}`);
+          const lines = Object.entries(runtime.resolved.servers).map(([key, server]) => `${key}\t${stateLabel(serverState(key, server, runtime.auth, clients.activity(key)))}\t${server.url}`);
           ctx.ui.notify(lines.join("\n") || "No MCP servers configured", "info"); return;
         }
         if (action === "add") { if (!ctx.hasUI) throw new Error("/mcp add requires interactive UI"); if (await addServer(ctx, runtime)) { await ctx.reload(); return; } return; }

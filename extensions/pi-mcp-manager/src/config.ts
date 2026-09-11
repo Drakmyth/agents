@@ -49,6 +49,7 @@ function validateServers(servers: Record<string, ProjectServerOverride>, require
       if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error(`Server ${id} must use HTTP or HTTPS`);
     }
     if (server.toolMode && !["automatic", "on-demand"].includes(server.toolMode)) throw new Error(`Invalid tool mode for ${id}`);
+    if (server.catalogUpdatedAt !== undefined && (typeof server.catalogUpdatedAt !== "string" || Number.isNaN(Date.parse(server.catalogUpdatedAt)))) throw new Error(`Invalid catalog refresh time for ${id}`);
   }
 }
 
@@ -109,6 +110,7 @@ function resolveServer(id: string, stored: StoredServer, override?: ProjectServe
     headers: merged.headers,
     oauth: merged.oauth ?? false,
     catalog: merged.catalog ?? [],
+    catalogUpdatedAt: merged.catalogUpdatedAt,
   };
 }
 
