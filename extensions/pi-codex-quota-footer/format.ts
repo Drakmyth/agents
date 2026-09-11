@@ -14,6 +14,15 @@ export function thresholdColor(value: number): ThemeColor {
   return "dim";
 }
 
+// TODO: Revisit combining all extension statuses onto one line; a custom footer can avoid this default-footer limitation.
+export function formatStatuses(statuses: ReadonlyMap<string, string>): string | undefined {
+  if (statuses.size === 0) return undefined;
+  return Array.from(statuses)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, text]) => text.replace(/[\r\n\t]/g, " ").replace(/ +/g, " ").trim())
+    .join(" ");
+}
+
 export function formatEpoch(seconds?: number): string {
   if (!seconds) return "unknown";
   const date = new Date(seconds * 1000);

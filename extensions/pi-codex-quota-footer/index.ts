@@ -1,7 +1,7 @@
 import type { Usage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext, ReadonlyFooterDataProvider, Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth, type TUI } from "@earendil-works/pi-tui";
-import { formatTokens, thresholdColor } from "./format.js";
+import { formatStatuses, formatTokens, thresholdColor } from "./format.js";
 import { buildQuotaLines, getUsage, type UsageResponse } from "./quota.js";
 
 const REFRESH_INTERVAL_MS = 30_000;
@@ -97,6 +97,8 @@ export default function piCodexQuotaFooter(pi: ExtensionAPI): void {
         invalidate() {},
         render(width) {
           const lines = [buildPathLine(ctx, theme, footerData, width), buildContextModelLine(ctx, theme, width)];
+          const statusLine = formatStatuses(footerData.getExtensionStatuses());
+          if (statusLine !== undefined) lines.push(truncateToWidth(statusLine, width, theme.fg("dim", "...")));
           for (const line of buildQuotaLines(usage, theme)) lines.push(line);
           return lines;
         },
