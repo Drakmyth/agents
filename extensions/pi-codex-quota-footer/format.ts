@@ -14,6 +14,7 @@ export function thresholdColor(value: number): ThemeColor {
   return "dim";
 }
 
+// TODO: Revisit combining all extension statuses onto one line; a custom footer can avoid this default-footer limitation.
 export function formatStatuses(statuses: ReadonlyMap<string, string>): string | undefined {
   if (statuses.size === 0) return undefined;
   return Array.from(statuses)
