@@ -33,7 +33,7 @@ async function addServer(ctx: ExtensionCommandContext, runtime: McpRuntime): Pro
   if (!auth) return false;
   const server: StoredServer = { name, url, enabled: true, toolMode, oauth: auth === "OAuth" };
   if (auth === "Bearer token from environment") {
-    const variable = (await ctx.ui.input("Environment variable", "MCP_TOKEN"))?.trim();
+    const variable = (await ctx.ui.input("Environment variable", "MY_SERVER_MCP_TOKEN"))?.trim();
     if (!variable) return false;
     server.headers = { Authorization: { source: { env: variable }, template: "Bearer {secret}" } };
   } else if (auth === "Bearer token from credential profile") {
@@ -126,7 +126,7 @@ async function addCredential(ctx: ExtensionCommandContext, runtime: McpRuntime):
   if (!kind) return false;
   runtime.global.credentials ??= {};
   if (kind === "Environment variable") {
-    const variable = (await ctx.ui.input("Environment variable", "MCP_TOKEN"))?.trim();
+    const variable = (await ctx.ui.input("Environment variable", "MY_SERVER_MCP_TOKEN"))?.trim();
     if (!variable) return false;
     runtime.global.credentials[name] = { source: { env: variable } };
   } else {
