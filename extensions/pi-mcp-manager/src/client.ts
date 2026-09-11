@@ -18,7 +18,7 @@ export class McpClients {
     private readonly profiles: Record<string, CredentialProfile>,
     private readonly redirectUrl: URL,
     private readonly onOAuthRedirect: (serverId: string, url: URL) => void | Promise<void>,
-    private readonly onActivityChange?: () => void,
+    private readonly onActivityChange?: (serverId: string, activity: ServerActivity) => void,
   ) {}
 
   activity(serverId: string): ServerActivity | undefined {
@@ -31,7 +31,7 @@ export class McpClients {
     activity.active++;
     activity.failed = false;
     this.activities.set(serverId, activity);
-    this.onActivityChange?.();
+    this.onActivityChange?.(serverId, { checking: true, failed: false });
     try {
       const result = await operation();
       activity.failed = false;
@@ -41,7 +41,7 @@ export class McpClients {
       throw error;
     } finally {
       activity.active--;
-      this.onActivityChange?.();
+      this.onActivityChange?.(serverId, { checking: activity.active > 0, failed: activity.failed });
     }
   }
 
