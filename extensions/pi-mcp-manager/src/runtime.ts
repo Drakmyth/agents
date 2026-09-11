@@ -29,18 +29,15 @@ export class McpRuntime {
     this.effective = effective;
   }
   origin(serverId: string): ConfigScope { return this.project.servers?.[serverId] ? "project" : "global"; }
-  async putServer(scope: "global", id: string, server: StoredServer): Promise<void>;
-  async putServer(scope: "project", id: string, server: ProjectServerOverride): Promise<void>;
-  async putServer(scope: ConfigScope, id: string, server: StoredServer | ProjectServerOverride): Promise<void>;
-  async putServer(scope: ConfigScope, id: string, server: StoredServer | ProjectServerOverride): Promise<void> {
-    if (scope === "global") {
-      this.global.servers ??= {};
-      this.global.servers[id] = server as StoredServer;
-    } else {
-      this.project.servers ??= {};
-      this.project.servers[id] = server;
-    }
-    await this.save(scope);
+  async putGlobalServer(id: string, server: StoredServer): Promise<void> {
+    this.global.servers ??= {};
+    this.global.servers[id] = server;
+    await this.save("global");
+  }
+  async putProjectOverride(id: string, override: ProjectServerOverride): Promise<void> {
+    this.project.servers ??= {};
+    this.project.servers[id] = override;
+    await this.save("project");
   }
   async removeServer(scope: ConfigScope, id: string): Promise<void> {
     if (scope === "global") delete this.global.servers?.[id]; else delete this.project.servers?.[id];

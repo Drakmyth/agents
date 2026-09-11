@@ -41,7 +41,8 @@ async function addServer(ctx: ExtensionCommandContext, runtime: McpRuntime): Pro
     if (!credential) return false;
     server.headers = { Authorization: { credential, template: "Bearer {secret}" } };
   }
-  await runtime.putServer(scope, id, server);
+  if (scope === "global") await runtime.putGlobalServer(id, server);
+  else await runtime.putProjectOverride(id, server);
   ctx.ui.notify(`Added MCP server ${id}`, "info");
   return true;
 }
@@ -57,7 +58,9 @@ async function editServer(id: string, ctx: ExtensionCommandContext, runtime: Mcp
   if (!toolMode) return false;
   const oauth = await ctx.ui.confirm("MCP OAuth", "Use OAuth for this server?");
   const source = scope === "global" ? runtime.global.servers?.[id] : runtime.project.servers?.[id];
-  await runtime.putServer(scope, id, { ...source, url, name, toolMode, oauth });
+  const updated = { ...source, url, name, toolMode, oauth };
+  if (scope === "global") await runtime.putGlobalServer(id, updated);
+  else await runtime.putProjectOverride(id, updated);
   return true;
 }
 
@@ -68,7 +71,9 @@ async function duplicateServer(id: string, ctx: ExtensionCommandContext, runtime
   if (!scope) return false;
   const copyId = (await ctx.ui.input("New server ID", `${id}-copy`))?.trim();
   if (!copyId) return false;
-  await runtime.putServer(scope, copyId, { ...structuredClone(server), name: `${server.name ?? id} copy` });
+  const copy = { ...structuredClone(server), name: `${server.name ?? id} copy` };
+  if (scope === "global") await runtime.putGlobalServer(copyId, copy);
+  else await runtime.putProjectOverride(copyId, copy);
   return true;
 }
 
@@ -77,8 +82,15 @@ async function refreshServer(id: string, ctx: ExtensionCommandContext, runtime: 
   if (!server) throw new Error(`Unknown MCP server: ${id}`);
   const catalog = await clients.refresh(id, server);
   const scope = runtime.origin(id);
-  const source = scope === "global" ? runtime.global.servers?.[id] : runtime.project.servers?.[id];
-  await runtime.putServer(scope, id, { ...source, catalog });
+  if (scope === "global") {
+    const source = runtime.global.servers?.[id];
+    if (!source) throw new Error(`Global MCP server ${id} is unavailable`);
+    await runtime.putGlobalServer(id, { ...source, catalog });
+  } else {
+    const source = runtime.project.servers?.[id];
+    if (!source) throw new Error(`Project MCP server ${id} is unavailable`);
+    await runtime.putProjectOverride(id, { ...source, catalog });
+  }
   ctx.ui.notify(`Refreshed ${catalog.length} tools from ${id}. Reloading MCP tools.`, "info");
   await ctx.reload();
 }

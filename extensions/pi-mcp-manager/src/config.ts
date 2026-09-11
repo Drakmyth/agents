@@ -118,7 +118,7 @@ export function mergeConfig(global: GlobalConfig, project: ProjectConfig = EMPTY
   for (const [id, override] of Object.entries(project.servers ?? {})) {
     if (servers[id]) continue;
     if (!override.url) throw new Error(`Project server ${id} requires a URL because it does not override a global server`);
-    servers[id] = resolveServer(id, override as StoredServer);
+    servers[id] = resolveServer(id, { ...override, url: override.url });
   }
   return { ...EMPTY_GLOBAL_CONFIG, credentials: structuredClone(global.credentials ?? {}), servers };
 }
