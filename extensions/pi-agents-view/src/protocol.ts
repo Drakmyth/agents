@@ -15,7 +15,7 @@ export interface AgentRecord {
   updatedAt: string;
 }
 
-export type RequestMethod = "health" | "snapshot" | "cancel" | "shutdown";
+export type RequestMethod = "health" | "snapshot" | "acquireLease" | "renewLease" | "releaseLease" | "cancel" | "shutdown";
 
 export interface Request {
   type: "request";
@@ -24,6 +24,7 @@ export interface Request {
   deadlineAt: number;
   idempotencyKey?: string;
   targetId?: string;
+  leaseId?: string;
 }
 
 export interface Response {
@@ -37,5 +38,6 @@ export interface Response {
 export interface Snapshot {
   protocolVersion: number;
   pid: number;
+  draining: boolean;
   registry: Registry;
 }

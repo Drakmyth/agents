@@ -4,14 +4,23 @@ import type { AgentViewPaths } from "./paths.ts";
 import { MAX_MESSAGE_BYTES, PROTOCOL_VERSION, type Request, type Response, type Snapshot } from "./protocol.ts";
 import { acquireLock, RegistryStore } from "./registry.ts";
 
+export interface SupervisorServerOptions {
+  exitOnIdle?: boolean;
+  idleDelayMs?: number;
+  leaseTtlMs?: number;
+}
+
 export class SupervisorServer {
   private readonly registry: RegistryStore;
   private server?: Server;
   private lock?: Awaited<ReturnType<typeof acquireLock>>;
   private readonly replies = new Map<string, Response>();
   private readonly cancelled = new Set<string>();
+  private readonly leases = new Map<string, number>();
+  private idleTimer?: NodeJS.Timeout;
+  private draining = false;
 
-  constructor(private readonly paths: AgentViewPaths) {
+  constructor(private readonly paths: AgentViewPaths, private readonly options: SupervisorServerOptions = {}) {
     this.registry = new RegistryStore(paths);
   }
 
@@ -25,9 +34,11 @@ export class SupervisorServer {
       this.server!.listen(this.paths.endpoint, resolve);
     });
     if (process.platform !== "win32") await chmod(this.paths.endpoint, 0o600);
+    this.scheduleIdleCheck();
   }
 
   async close(): Promise<void> {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
     await new Promise<void>((resolve) => this.server?.close(() => resolve()) ?? resolve());
     if (process.platform !== "win32") await rm(this.paths.endpoint, { force: true });
     await this.lock?.close();
@@ -60,8 +71,23 @@ export class SupervisorServer {
     if (request.method === "cancel") {
       if (request.targetId) this.cancelled.add(request.targetId);
       response = success(request.id, { cancelled: request.targetId });
-    } else if (this.cancelled.delete(request.id)) response = failure(request.id, "Request cancelled");
-    else if (request.method === "health") response = success(request.id, { protocolVersion: PROTOCOL_VERSION, pid: process.pid });
+    } else if (request.method === "acquireLease") {
+      const leaseId = request.leaseId || request.id;
+      this.leases.set(leaseId, Date.now() + (this.options.leaseTtlMs ?? 15_000));
+      this.draining = false;
+      this.scheduleIdleCheck();
+      response = success(request.id, { leaseId });
+    } else if (request.method === "renewLease" && request.leaseId && this.leases.has(request.leaseId)) {
+      this.leases.set(request.leaseId, Date.now() + (this.options.leaseTtlMs ?? 15_000));
+      this.scheduleIdleCheck();
+      response = success(request.id, { leaseId: request.leaseId });
+    } else if (request.method === "releaseLease" && request.leaseId) {
+      this.leases.delete(request.leaseId);
+      this.scheduleIdleCheck();
+      response = success(request.id, { released: request.leaseId });
+    } else if (request.method === "renewLease") response = failure(request.id, "Lease is not active");
+    else if (this.cancelled.delete(request.id)) response = failure(request.id, "Request cancelled");
+    else if (request.method === "health") response = success(request.id, { protocolVersion: PROTOCOL_VERSION, pid: process.pid, draining: this.draining });
     else if (request.method === "snapshot") response = success(request.id, this.snapshot());
     else if (request.method === "shutdown") {
       response = success(request.id, { shuttingDown: true });
@@ -78,7 +104,21 @@ export class SupervisorServer {
   }
 
   private snapshot(): Snapshot {
-    return { protocolVersion: PROTOCOL_VERSION, pid: process.pid, registry: this.registry.snapshot() };
+    return { protocolVersion: PROTOCOL_VERSION, pid: process.pid, draining: this.draining, registry: this.registry.snapshot() };
+  }
+
+  private scheduleIdleCheck(): void {
+    if (!this.options.exitOnIdle) return;
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    const now = Date.now();
+    for (const [id, expiresAt] of this.leases) if (expiresAt <= now) this.leases.delete(id);
+    if (this.leases.size) return;
+    this.draining = true;
+    this.idleTimer = setTimeout(() => {
+      const active = [...this.leases.values()].some((expiresAt) => expiresAt > Date.now());
+      if (!active) void this.close().finally(() => process.exit(0));
+    }, this.options.idleDelayMs ?? 1_000);
+    this.idleTimer.unref();
   }
 
   private send(socket: Socket, response: Response): void {

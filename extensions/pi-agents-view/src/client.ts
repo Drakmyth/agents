@@ -11,7 +11,7 @@ export class SupervisorClient {
 
   constructor(private readonly paths: AgentViewPaths) {}
 
-  async request(method: RequestMethod, options: { timeoutMs?: number; idempotencyKey?: string; targetId?: string } = {}): Promise<unknown> {
+  async request(method: RequestMethod, options: { timeoutMs?: number; idempotencyKey?: string; targetId?: string; leaseId?: string } = {}): Promise<unknown> {
     const timeoutMs = options.timeoutMs ?? 5_000;
     const id = `client-${process.pid}-${++this.sequence}`;
     const socket = createConnection(this.paths.endpoint);
@@ -35,9 +35,21 @@ export class SupervisorClient {
     });
     socket.once("connect", () => socket.write(`${JSON.stringify({
       type: "request", id, method, deadlineAt: Date.now() + timeoutMs,
-      idempotencyKey: options.idempotencyKey, targetId: options.targetId,
+      idempotencyKey: options.idempotencyKey, targetId: options.targetId, leaseId: options.leaseId,
     })}\n`));
     return response;
+  }
+
+  async acquireLease(leaseId: string): Promise<void> {
+    await this.request("acquireLease", { leaseId });
+  }
+
+  async renewLease(leaseId: string): Promise<void> {
+    await this.request("renewLease", { leaseId });
+  }
+
+  async releaseLease(leaseId: string): Promise<void> {
+    await this.request("releaseLease", { leaseId });
   }
 
   async connectOrStart(): Promise<unknown> {

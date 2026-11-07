@@ -45,6 +45,9 @@ test("supervisor serves health and snapshots over bounded JSONL IPC", async () =
     const health = await client.request("health") as { protocolVersion: number; pid: number };
     assert.equal(health.protocolVersion, 1);
     assert.equal(health.pid, process.pid);
+    await client.acquireLease("test-view");
+    await client.renewLease("test-view");
+    await client.releaseLease("test-view");
     const snapshot = await client.request("snapshot") as { registry: { agents: unknown[] } };
     assert.deepEqual(snapshot.registry.agents, []);
   } finally {

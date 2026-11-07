@@ -19,6 +19,11 @@ The current command verifies or starts the detached supervisor. Agent dispatch a
 - Request deadlines, cancellation messages, and idempotency keys
 - Atomic durable registry writes
 - Detached startup and health checks
+- Renewable client leases and automatic draining when the final view exits
+
+When the final Agent View client exits, idle workers will stop immediately and executing workers will stop after their current turns. The supervisor then exits so Pi's installation files remain available to Winget. Reopening Agent View restores resumable sessions from the registry.
+
+The planned navigation follows Claude Code Agent View: `/quit` from a directly opened session exits Pi, while `/quit` from a session entered through Agent View returns to the view; `/quit` from Agent View exits Pi. Pi's existing `/quit` command is reused without adding `/exit`.
 
 State is stored under `~/.pi/agent/pi-agents-view/`.
 
