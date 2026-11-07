@@ -1,6 +1,5 @@
 import { spawn } from "node:child_process";
 import { access } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { createConnection } from "node:net";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { AgentViewPaths } from "./paths.ts";
@@ -68,8 +67,10 @@ export class SupervisorClient {
   private async start(): Promise<void> {
     const entry = fileURLToPath(new URL("./supervisor-entry.ts", import.meta.url));
     await access(entry);
-    const loader = pathToFileURL(createRequire(import.meta.url).resolve("tsx")).href;
-    const child = spawn(process.execPath, ["--import", loader, entry], {
+    const loaderPath = fileURLToPath(new URL("../node_modules/tsx/dist/loader.mjs", import.meta.url));
+    await access(loaderPath);
+    const loader = pathToFileURL(loaderPath).href;
+    const child = spawn(process.env.PI_AGENTS_VIEW_NODE ?? "node", ["--import", loader, entry], {
       detached: true,
       stdio: "ignore",
       env: { ...process.env, PI_AGENTS_VIEW_STATE_DIR: this.paths.stateDir },
