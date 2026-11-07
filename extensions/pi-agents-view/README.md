@@ -9,7 +9,7 @@ pi --agents
 /agents
 ```
 
-The current command verifies or starts the detached supervisor. Agent dispatch and the full-screen dashboard are intentionally deferred until their runtime and UI contracts are implemented.
+The current command verifies or starts the detached supervisor. The supervisor can now host persistent Pi RPC workers, but agent dispatch remains protocol-only until the full-screen dashboard is implemented.
 
 ## Foundation guarantees
 
@@ -20,6 +20,8 @@ The current command verifies or starts the detached supervisor. Agent dispatch a
 - Atomic durable registry writes
 - Detached startup and health checks
 - Renewable client leases and automatic draining when the final view exits
+- Persistent Pi RPC workers with launch, prompt, abort, stop, and resume operations
+- Lifecycle classification and restart reconciliation for interrupted workers
 
 When the final Agent View client exits, idle workers will stop immediately and executing workers will stop after their current turns. The supervisor then exits so Pi's installation files remain available to Winget. Reopening Agent View restores resumable sessions from the registry.
 

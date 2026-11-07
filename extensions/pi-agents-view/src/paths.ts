@@ -8,6 +8,7 @@ export interface AgentViewPaths {
   lockFile: string;
   registryFile: string;
   logFile: string;
+  sessionsDir: string;
 }
 
 export function agentViewPaths(stateDir = process.env.PI_AGENTS_VIEW_STATE_DIR ?? join(homedir(), ".pi", "agent", "pi-agents-view")): AgentViewPaths {
@@ -21,5 +22,6 @@ export function agentViewPaths(stateDir = process.env.PI_AGENTS_VIEW_STATE_DIR ?
     lockFile: join(root, "supervisor.lock"),
     registryFile: join(root, "registry.json"),
     logFile: join(root, "supervisor.log"),
+    sessionsDir: join(root, "sessions"),
   };
 }

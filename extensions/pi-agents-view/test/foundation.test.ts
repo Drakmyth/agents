@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { SupervisorClient } from "../src/client.ts";
 import { agentViewPaths } from "../src/paths.ts";
@@ -52,6 +53,35 @@ test("supervisor serves health and snapshots over bounded JSONL IPC", async () =
     assert.deepEqual(snapshot.registry.agents, []);
   } finally {
     await server.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("supervisor hosts, settles, stops, and resumes persisted workers", async () => {
+  const root = await temporaryState();
+  const paths = agentViewPaths(root);
+  const previousCommand = process.env.PI_AGENTS_VIEW_PI;
+  const previousArgs = process.env.PI_AGENTS_VIEW_PI_ARGS;
+  process.env.PI_AGENTS_VIEW_PI = process.execPath;
+  process.env.PI_AGENTS_VIEW_PI_ARGS = JSON.stringify([fileURLToPath(new URL("./fake-worker.mjs", import.meta.url))]);
+  const server = new SupervisorServer(paths);
+  try {
+    await server.start();
+    const client = new SupervisorClient(paths);
+    const launched = await client.request("launch", { payload: { root, prompt: "work" }, timeoutMs: 5_000 }) as { id: string };
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    let snapshot = await client.request("snapshot") as { registry: { agents: Array<{ id: string; state: string; sessionFile?: string }> } };
+    const completed = snapshot.registry.agents.find((agent) => agent.id === launched.id)!;
+    assert.equal(completed.state, "completed");
+    assert.match(completed.sessionFile!, /fake\.jsonl$/);
+    await client.request("stop", { payload: { id: launched.id } });
+    await client.request("resume", { payload: { id: launched.id } });
+    snapshot = await client.request("snapshot") as typeof snapshot;
+    assert.equal(snapshot.registry.agents[0]!.state, "idle");
+  } finally {
+    await server.close();
+    if (previousCommand === undefined) delete process.env.PI_AGENTS_VIEW_PI; else process.env.PI_AGENTS_VIEW_PI = previousCommand;
+    if (previousArgs === undefined) delete process.env.PI_AGENTS_VIEW_PI_ARGS; else process.env.PI_AGENTS_VIEW_PI_ARGS = previousArgs;
     await rm(root, { recursive: true, force: true });
   }
 });
