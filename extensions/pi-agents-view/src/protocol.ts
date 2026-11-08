@@ -7,9 +7,21 @@ export interface Registry {
   agents: AgentRecord[];
 }
 
+export interface Workspace {
+  mode: "worktree" | "directory";
+  selectedRoot: string;
+  path: string;
+  repositoryRoot?: string;
+  branch?: string;
+  baseCommit?: string;
+  managed: boolean;
+  warning?: string;
+}
+
 export interface AgentRecord {
   id: string;
   root: string;
+  workspace: Workspace;
   state: "starting" | "running" | "waiting" | "idle" | "completed" | "failed" | "stopped";
   createdAt: string;
   updatedAt: string;

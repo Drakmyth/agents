@@ -1,9 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { chmod, rm } from "node:fs/promises";
 import { createServer, type Server, type Socket } from "node:net";
 import type { AgentViewPaths } from "./paths.ts";
 import { MAX_MESSAGE_BYTES, PROTOCOL_VERSION, type Request, type Response, type Snapshot } from "./protocol.ts";
 import { acquireLock, processAlive, RegistryStore } from "./registry.ts";
 import { terminatePid, WorkerHost } from "./workers.ts";
+import { prepareWorkspace } from "./workspaces.ts";
 
 export interface SupervisorServerOptions {
   exitOnIdle?: boolean;
@@ -111,7 +113,9 @@ export class SupervisorServer {
       if (this.draining) throw new Error("Supervisor is draining");
       const payload = request.payload as { root?: string; prompt?: string } | undefined;
       if (!payload?.root) throw new Error("Agent root is required");
-      response = success(request.id, await this.workers.launch(payload.root, payload.prompt));
+      const id = randomUUID();
+      const prepared = await prepareWorkspace(payload.root, id, this.paths.worktreesDir);
+      response = success(request.id, await this.workers.launch(id, prepared.root, prepared.workspace, payload.prompt));
     } else if (request.method === "prompt") {
       if (this.draining) throw new Error("Supervisor is draining");
       const payload = request.payload as { id?: string; message?: string } | undefined;
