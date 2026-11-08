@@ -1,12 +1,13 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { randomUUID } from "node:crypto";
 import { Editor, Key, matchesKey, truncateToWidth, type Component, type Focusable } from "@earendil-works/pi-tui";
 import type { AgentRecord, Snapshot } from "./protocol.ts";
 import type { SupervisorClient } from "./client.ts";
 
 export type Grouping = "root" | "state" | "none";
 export type DashboardResult =
-  | { type: "dispatch"; prompt: string; root: string }
-  | { type: "filter" | "stop" | "resume" | "abort" | "close" };
+  | { type: "filter" | "close" }
+  | { type: "error"; message: string };
 
 export class DashboardModel {
   private agents: AgentRecord[] = [];
@@ -61,9 +62,12 @@ export async function showDashboard(
   client: SupervisorClient,
   model: DashboardModel,
   dispatchRoot: string,
+  connection: Promise<unknown> = Promise.resolve(),
 ): Promise<DashboardResult> {
   return ctx.ui.custom<DashboardResult>((tui, theme, _keys, done) => {
     let closed = false;
+    let connected = false;
+    let busy = false;
     const editor = new Editor(tui, {
       borderColor: (text) => theme.fg("borderAccent", text),
       selectList: {
@@ -75,23 +79,43 @@ export async function showDashboard(
     editor.onSubmit = (value) => {
       const prompt = value.trim();
       if (prompt === "/quit") finish({ type: "close" });
-      else if (prompt) finish({ type: "dispatch", prompt, root: model.dispatchRoot(dispatchRoot) });
+      else if (connected && !busy && prompt) void perform("launch", {
+        root: model.dispatchRoot(dispatchRoot), prompt,
+      }, "launch agent", true);
     };
     const refresh = async () => {
       try { model.update(await client.request("snapshot") as Snapshot); tui.requestRender(); } catch { /* next tick retries */ }
     };
-    void refresh();
-    const timer = setInterval(() => void refresh(), 1_000);
+    const timer = setInterval(() => { if (connected) void refresh(); }, 1_000);
+    const perform = async (method: "launch" | "stop" | "resume" | "abort", payload: unknown, label: string, clear = false) => {
+      busy = true;
+      tui.requestRender();
+      try {
+        await client.request(method, { payload, timeoutMs: 30_000, idempotencyKey: method === "launch" ? randomUUID() : undefined });
+        if (clear) editor.setText("");
+        await refresh();
+      } catch (error) {
+        ctx.ui.notify(`Could not ${label}: ${error instanceof Error ? error.message : String(error)}`, "error");
+      } finally {
+        busy = false;
+        tui.requestRender();
+      }
+    };
     const finish = (result: DashboardResult) => {
       if (closed) return;
       closed = true; clearInterval(timer); done(result);
     };
+    void connection.then(() => {
+      connected = true;
+      void refresh();
+      tui.requestRender();
+    }).catch((error) => finish({ type: "error", message: error instanceof Error ? error.message : String(error) }));
     const view: Component & Focusable = {
       focused: true,
       render(width: number): string[] {
         const safeWidth = Math.max(1, width);
         const header = [
-          theme.fg("accent", theme.bold("Pi Agent View")) + theme.fg("dim", `  ${model.dispatchRoot(dispatchRoot)}  ·  group: ${model.grouping}${model.filter() ? `  ·  filter: ${model.filter()}` : ""}`),
+          theme.fg("accent", theme.bold("Pi Agent View")) + theme.fg("dim", `  ${connected ? model.dispatchRoot(dispatchRoot) : "Connecting…"}${busy ? "  ·  working…" : ""}  ·  group: ${model.grouping}${model.filter() ? `  ·  filter: ${model.filter()}` : ""}`),
           theme.fg("dim", "↑/↓ select  Ctrl+S group  Ctrl+F filter  Ctrl+X stop  Ctrl+Shift+R resume  Ctrl+Alt+X abort  Esc quit"), "",
         ];
         const body: string[] = [];
@@ -123,9 +147,9 @@ export async function showDashboard(
         else if (matchesKey(data, Key.down)) model.move(1);
         else if (matchesKey(data, "ctrl+s")) model.cycleGrouping();
         else if (matchesKey(data, "ctrl+f")) finish({ type: "filter" });
-        else if (matchesKey(data, "ctrl+x") && model.selected()) finish({ type: "stop" });
-        else if (matchesKey(data, "ctrl+shift+r") && model.selected()) finish({ type: "resume" });
-        else if (matchesKey(data, "ctrl+alt+x") && model.selected()) finish({ type: "abort" });
+        else if (matchesKey(data, "ctrl+x") && model.selected() && !busy) void perform("stop", { id: model.selected()!.id }, "stop agent");
+        else if (matchesKey(data, "ctrl+shift+r") && model.selected() && !busy) void perform("resume", { id: model.selected()!.id }, "resume agent");
+        else if (matchesKey(data, "ctrl+alt+x") && model.selected() && !busy) void perform("abort", { id: model.selected()!.id }, "abort agent");
         else if (matchesKey(data, Key.escape)) {
           if (editor.getText()) editor.setText("");
           else finish({ type: "close" });

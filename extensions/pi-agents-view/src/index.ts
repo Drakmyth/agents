@@ -37,15 +37,19 @@ export default function piAgentsView(pi: ExtensionAPI): void {
     }
     open = true;
     try {
-      await connect();
+      const connection = connect();
       const preferences = await loadPreferences(paths.preferencesFile);
       const model = new DashboardModel(preferences.grouping);
       while (true) {
-        const action = await showDashboard(ctx, client, model, ctx.cwd);
+        const action = await showDashboard(ctx, client, model, ctx.cwd, connection);
         preferences.grouping = model.grouping;
         await savePreferences(paths.preferencesFile, preferences);
+        if (action.type === "error") throw new Error(action.message);
         if (action.type === "close") {
-          if (exitOnClose) ctx.shutdown();
+          if (exitOnClose) {
+            blankForeground(ctx);
+            ctx.shutdown();
+          }
           return;
         }
         if (action.type === "filter") {
@@ -53,19 +57,6 @@ export default function piAgentsView(pi: ExtensionAPI): void {
           if (query !== undefined) model.setFilter(query);
           continue;
         }
-        if (action.type === "dispatch") {
-          try {
-            await client.request("launch", {
-              payload: { root: action.root, prompt: action.prompt }, timeoutMs: 30_000, idempotencyKey: randomUUID(),
-            });
-          } catch (error) { ctx.ui.notify(`Could not launch agent: ${message(error)}`, "error"); }
-          continue;
-        }
-        const selected = model.selected();
-        if (!selected) continue;
-        const method = action.type === "stop" ? "stop" : action.type === "resume" ? "resume" : "abort";
-        try { await client.request(method, { payload: { id: selected.id }, timeoutMs: 30_000 }); }
-        catch (error) { ctx.ui.notify(`Could not ${method} agent: ${message(error)}`, "error"); }
       }
     } catch (error) {
       ctx.ui.notify(`Agent View failed: ${message(error)}`, "error");
@@ -85,6 +76,18 @@ export default function piAgentsView(pi: ExtensionAPI): void {
     if (renewal) clearInterval(renewal);
     if (leased) await client.releaseLease(leaseId).catch(() => undefined);
   });
+}
+
+function blankForeground(ctx: ExtensionContext): void {
+  const empty = () => ({ render: () => [], invalidate: () => undefined });
+  ctx.ui.setHeader(empty);
+  ctx.ui.setFooter(empty);
+  ctx.ui.setEditorComponent(() => ({
+    ...empty(),
+    getText: () => "",
+    setText: () => undefined,
+    handleInput: () => undefined,
+  }));
 }
 
 function message(error: unknown): string {
