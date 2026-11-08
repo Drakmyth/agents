@@ -46,10 +46,7 @@ export default function piAgentsView(pi: ExtensionAPI): void {
         await savePreferences(paths.preferencesFile, preferences);
         if (action.type === "error") throw new Error(action.message);
         if (action.type === "close") {
-          if (exitOnClose) {
-            blankForeground(ctx);
-            ctx.shutdown();
-          }
+          if (exitOnClose) ctx.shutdown();
           return;
         }
         if (action.type === "filter") {
@@ -76,18 +73,6 @@ export default function piAgentsView(pi: ExtensionAPI): void {
     if (renewal) clearInterval(renewal);
     if (leased) await client.releaseLease(leaseId).catch(() => undefined);
   });
-}
-
-function blankForeground(ctx: ExtensionContext): void {
-  const empty = () => ({ render: () => [], invalidate: () => undefined });
-  ctx.ui.setHeader(empty);
-  ctx.ui.setFooter(empty);
-  ctx.ui.setEditorComponent(() => ({
-    ...empty(),
-    getText: () => "",
-    setText: () => undefined,
-    handleInput: () => undefined,
-  }));
 }
 
 function message(error: unknown): string {
