@@ -90,25 +90,32 @@ export async function showDashboard(
       focused: true,
       render(width: number): string[] {
         const safeWidth = Math.max(1, width);
-        const lines = [
+        const header = [
           theme.fg("accent", theme.bold("Pi Agent View")) + theme.fg("dim", `  ${model.dispatchRoot(dispatchRoot)}  ·  group: ${model.grouping}${model.filter() ? `  ·  filter: ${model.filter()}` : ""}`),
           theme.fg("dim", "↑/↓ select  Ctrl+S group  Ctrl+F filter  Ctrl+X stop  Ctrl+Shift+R resume  Ctrl+Alt+X abort  Esc quit"), "",
         ];
+        const body: string[] = [];
+        let selectedLine = 0;
         const groups = model.groups();
-        if (!groups.length) lines.push(theme.fg("muted", model.filter() ? "No agents match the filter." : "Type a task below and press Enter."));
+        if (!groups.length) body.push(theme.fg("muted", model.filter() ? "No agents match the filter." : "Type a task below and press Enter."));
         for (const group of groups) {
-          lines.push(theme.fg("accent", `${group.label} (${group.agents.length})`));
+          body.push(theme.fg("accent", `${group.label} (${group.agents.length})`));
           for (const agent of group.agents) {
             const selected = model.selected()?.id === agent.id;
             const attention = agent.state === "waiting" || agent.state === "failed";
             const workspace = agent.workspace.mode === "worktree" ? agent.workspace.branch ?? "worktree" : "shared directory";
-            lines.push(` ${theme.fg(selected ? "accent" : "dim", selected ? ">" : " ")} ${theme.fg(attention ? "warning" : stateColor(agent.state), stateIcon(agent.state))} ${theme.bold(agent.task)}  ${theme.fg("muted", agent.activity ?? agent.state)}  ${theme.fg("dim", `${workspace} · ${age(agent.createdAt)}`)}`);
-            if (selected) lines.push(theme.fg("dim", `      ${agent.root}${agent.workspace.warning ? ` · ${agent.workspace.warning}` : ""}`));
+            if (selected) selectedLine = body.length;
+            body.push(` ${theme.fg(selected ? "accent" : "dim", selected ? ">" : " ")} ${theme.fg(attention ? "warning" : stateColor(agent.state), stateIcon(agent.state))} ${theme.bold(agent.task)}  ${theme.fg("muted", agent.activity ?? agent.state)}  ${theme.fg("dim", `${workspace} · ${age(agent.createdAt)}`)}`);
+            if (selected) body.push(theme.fg("dim", `      ${agent.root}${agent.workspace.warning ? ` · ${agent.workspace.warning}` : ""}`));
           }
         }
         const editorLines = editor.render(safeWidth);
-        return [...lines, "", theme.fg("dim", `New agent in ${model.dispatchRoot(dispatchRoot)}`), ...editorLines]
-          .slice(-Math.max(1, tui.terminal.rows)).map((line) => truncateToWidth(line, safeWidth));
+        const bodyHeight = Math.max(1, tui.terminal.rows - header.length - editorLines.length - 2);
+        const start = Math.max(0, Math.min(selectedLine - Math.floor(bodyHeight / 2), body.length - bodyHeight));
+        const visibleBody = body.slice(start, start + bodyHeight);
+        while (visibleBody.length < bodyHeight) visibleBody.push("");
+        return [...header, ...visibleBody, theme.fg("dim", `New agent in ${model.dispatchRoot(dispatchRoot)}`), ...editorLines]
+          .map((line) => truncateToWidth(line, safeWidth));
       },
       invalidate() { editor.invalidate(); },
       handleInput(data: string): void {
@@ -128,6 +135,9 @@ export async function showDashboard(
     };
     Object.defineProperty(view, "focused", { get: () => editor.focused, set: (value: boolean) => { editor.focused = value; } });
     return view;
+  }, {
+    overlay: true,
+    overlayOptions: { anchor: "top-left", width: "100%", maxHeight: "100%", margin: 0 },
   });
 }
 
