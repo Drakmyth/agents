@@ -72,6 +72,10 @@ export class WorkerHost {
 
   has(id: string): boolean { return this.workers.has(id); }
 
+  hasActiveTurns(): boolean {
+    return [...this.workers.values()].some((worker) => ["starting", "running", "waiting"].includes(worker.record.state));
+  }
+
   private async start(record: AgentRecord, sessionArgs: string[]): Promise<void> {
     await mkdir(this.sessionsDir, { recursive: true });
     const prefixArgs = process.env.PI_AGENTS_VIEW_PI_ARGS ? JSON.parse(process.env.PI_AGENTS_VIEW_PI_ARGS) as string[] : [];

@@ -12,7 +12,7 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
   else if (command.type === "prompt") {
     send({ type: "response", id: command.id, success: true, data: { disposition: "started" } });
     send({ type: "agent_start" });
-    setTimeout(() => { send({ type: "tool_execution_start", toolName: "read" }); send({ type: "agent_settled" }); }, 25);
+    setTimeout(() => { send({ type: "tool_execution_start", toolName: "read" }); send({ type: "agent_settled" }); }, Number(process.env.PI_AGENTS_VIEW_FAKE_DELAY_MS ?? 25));
   } else if (command.type === "abort") {
     send({ type: "response", id: command.id, success: true });
     send({ type: "agent_settled" });
