@@ -10,6 +10,7 @@ export interface AgentViewPaths {
   logFile: string;
   sessionsDir: string;
   worktreesDir: string;
+  preferencesFile: string;
 }
 
 export function agentViewPaths(stateDir = process.env.PI_AGENTS_VIEW_STATE_DIR ?? join(homedir(), ".pi", "agent", "pi-agents-view")): AgentViewPaths {
@@ -25,5 +26,6 @@ export function agentViewPaths(stateDir = process.env.PI_AGENTS_VIEW_STATE_DIR ?
     logFile: join(root, "supervisor.log"),
     sessionsDir: join(root, "sessions"),
     worktreesDir: join(root, "worktrees"),
+    preferencesFile: join(root, "preferences.json"),
   };
 }

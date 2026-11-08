@@ -91,6 +91,40 @@ test("supervisor hosts, settles, stops, and resumes persisted workers", async ()
   }
 });
 
+test("draining supervisor remains available while an active turn finishes", async () => {
+  const root = await temporaryState();
+  const paths = agentViewPaths(root);
+  const previousCommand = process.env.PI_AGENTS_VIEW_PI;
+  const previousArgs = process.env.PI_AGENTS_VIEW_PI_ARGS;
+  const previousDelay = process.env.PI_AGENTS_VIEW_FAKE_DELAY_MS;
+  process.env.PI_AGENTS_VIEW_PI = process.execPath;
+  process.env.PI_AGENTS_VIEW_PI_ARGS = JSON.stringify([fileURLToPath(new URL("./fake-worker.mjs", import.meta.url))]);
+  process.env.PI_AGENTS_VIEW_FAKE_DELAY_MS = "150";
+  const server = new SupervisorServer(paths, { exitOnIdle: true, idleDelayMs: 10, onIdleExit: () => undefined });
+  try {
+    await server.start();
+    const client = new SupervisorClient(paths);
+    await client.acquireLease("first-view");
+    await client.request("launch", { payload: { root, prompt: "wait" }, timeoutMs: 5_000 });
+    await client.releaseLease("first-view");
+    await new Promise((resolve) => setTimeout(resolve, 35));
+    const draining = await client.request("health") as { draining: boolean };
+    assert.equal(draining.draining, true);
+    await client.acquireLease("second-view");
+    const reattached = await client.request("health") as { draining: boolean };
+    assert.equal(reattached.draining, false);
+    await client.releaseLease("second-view");
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await assert.rejects(client.request("health", { timeoutMs: 50 }));
+  } finally {
+    await server.close();
+    if (previousCommand === undefined) delete process.env.PI_AGENTS_VIEW_PI; else process.env.PI_AGENTS_VIEW_PI = previousCommand;
+    if (previousArgs === undefined) delete process.env.PI_AGENTS_VIEW_PI_ARGS; else process.env.PI_AGENTS_VIEW_PI_ARGS = previousArgs;
+    if (previousDelay === undefined) delete process.env.PI_AGENTS_VIEW_FAKE_DELAY_MS; else process.env.PI_AGENTS_VIEW_FAKE_DELAY_MS = previousDelay;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("Git roots receive isolated worktrees while non-Git roots remain shared", async () => {
   const root = await temporaryState();
   const repository = join(root, "repository");

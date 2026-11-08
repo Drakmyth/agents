@@ -12,6 +12,7 @@ export interface SupervisorServerOptions {
   idleDelayMs?: number;
   leaseTtlMs?: number;
   drainGraceMs?: number;
+  onIdleExit?: () => void;
 }
 
 export class SupervisorServer {
@@ -160,8 +161,13 @@ export class SupervisorServer {
     if (this.leases.size) return;
     this.draining = true;
     this.idleTimer = setTimeout(() => {
-      const active = [...this.leases.values()].some((expiresAt) => expiresAt > Date.now());
-      if (!active) void this.close().finally(() => process.exit(0));
+      const activeLease = [...this.leases.values()].some((expiresAt) => expiresAt > Date.now());
+      if (activeLease) return;
+      if (this.workers.hasActiveTurns()) {
+        this.scheduleIdleCheck();
+        return;
+      }
+      void this.close().finally(() => (this.options.onIdleExit ?? (() => process.exit(0)))());
     }, this.options.idleDelayMs ?? 1_000);
     this.idleTimer.unref();
   }

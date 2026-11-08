@@ -22,6 +22,7 @@ export interface AgentRecord {
   id: string;
   root: string;
   workspace: Workspace;
+  task: string;
   state: "starting" | "running" | "waiting" | "idle" | "completed" | "failed" | "stopped";
   createdAt: string;
   updatedAt: string;

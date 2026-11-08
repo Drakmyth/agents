@@ -54,7 +54,7 @@ export async function inspectManagedWorkspace(workspace: Workspace): Promise<{ r
 
 async function git(cwd: string, args: string[], timeout = 5_000): Promise<string> {
   try {
-    const result = await execFileAsync("git", ["-C", cwd, ...args], { timeout, maxBuffer: 1024 * 1024 });
+    const result = await execFileAsync("git", ["-C", cwd, ...args], { timeout, maxBuffer: 1024 * 1024, windowsHide: true });
     return result.stdout;
   } catch (error) {
     const detail = error as Error & { stderr?: string };
