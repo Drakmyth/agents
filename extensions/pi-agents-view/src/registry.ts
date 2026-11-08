@@ -13,6 +13,10 @@ export class RegistryStore {
     try {
       const parsed = JSON.parse(await readFile(this.paths.registryFile, "utf8")) as Registry;
       if (parsed.version !== 1 || !Array.isArray(parsed.agents)) throw new Error("unsupported registry format");
+      for (const agent of parsed.agents) agent.workspace ??= {
+        mode: "directory", selectedRoot: agent.root, path: agent.root, managed: false,
+        warning: "Legacy agent uses its original shared directory",
+      };
       this.value = parsed;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;

@@ -22,6 +22,8 @@ The current command verifies or starts the detached supervisor. The supervisor c
 - Renewable client leases and automatic draining when the final view exits
 - Persistent Pi RPC workers with launch, prompt, abort, stop, and resume operations
 - Lifecycle classification and restart reconciliation for interrupted workers
+- Automatic Git worktrees with selected-subdirectory preservation
+- Direct execution with conflict warnings for non-Git directories
 
 When the final Agent View client exits, idle workers will stop immediately and executing workers will stop after their current turns. The supervisor then exits so Pi's installation files remain available to Winget. Reopening Agent View restores resumable sessions from the registry.
 

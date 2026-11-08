@@ -1,8 +1,7 @@
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { AgentRecord } from "./protocol.ts";
+import type { AgentRecord, Workspace } from "./protocol.ts";
 
 interface Worker {
   record: AgentRecord;
@@ -17,9 +16,9 @@ export class WorkerHost {
 
   constructor(private readonly sessionsDir: string, private readonly persist: (record: AgentRecord) => Promise<void>) {}
 
-  async launch(root: string, prompt?: string): Promise<AgentRecord> {
+  async launch(id: string, root: string, workspace: Workspace, prompt?: string): Promise<AgentRecord> {
     const now = new Date().toISOString();
-    const record: AgentRecord = { id: randomUUID(), root, state: "starting", createdAt: now, updatedAt: now, activity: "Starting" };
+    const record: AgentRecord = { id, root, workspace, state: "starting", createdAt: now, updatedAt: now, activity: "Starting" };
     await this.persist(record);
     await this.start(record, ["--session-dir", join(this.sessionsDir, record.id)]);
     if (prompt?.trim()) await this.prompt(record.id, prompt);

@@ -1,13 +1,18 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import test from "node:test";
 import { SupervisorClient } from "../src/client.ts";
 import { agentViewPaths } from "../src/paths.ts";
 import { acquireLock, RegistryStore } from "../src/registry.ts";
 import { SupervisorServer } from "../src/server.ts";
+import { inspectManagedWorkspace, prepareWorkspace } from "../src/workspaces.ts";
+
+const execFileAsync = promisify(execFile);
 
 async function temporaryState(): Promise<string> {
   return mkdtemp(join(tmpdir(), "pi-agents-view-"));
@@ -82,6 +87,34 @@ test("supervisor hosts, settles, stops, and resumes persisted workers", async ()
     await server.close();
     if (previousCommand === undefined) delete process.env.PI_AGENTS_VIEW_PI; else process.env.PI_AGENTS_VIEW_PI = previousCommand;
     if (previousArgs === undefined) delete process.env.PI_AGENTS_VIEW_PI_ARGS; else process.env.PI_AGENTS_VIEW_PI_ARGS = previousArgs;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Git roots receive isolated worktrees while non-Git roots remain shared", async () => {
+  const root = await temporaryState();
+  const repository = join(root, "repository");
+  const worktrees = join(root, "worktrees");
+  const subdirectory = join(repository, "packages", "app");
+  await mkdir(subdirectory, { recursive: true });
+  await execFileAsync("git", ["init", repository]);
+  await execFileAsync("git", ["-C", repository, "config", "user.email", "test@example.com"]);
+  await execFileAsync("git", ["-C", repository, "config", "user.name", "Test"]);
+  await writeFile(join(repository, "README.md"), "test\n");
+  await execFileAsync("git", ["-C", repository, "add", "."]);
+  await execFileAsync("git", ["-C", repository, "commit", "-m", "initial"]);
+  try {
+    const isolated = await prepareWorkspace(subdirectory, "agent-1", worktrees);
+    assert.equal(isolated.workspace.mode, "worktree");
+    assert.equal(isolated.workspace.branch, "pi-agents-view/agent-1");
+    assert.equal(isolated.root, join(isolated.workspace.path, "packages", "app"));
+    assert.deepEqual(await inspectManagedWorkspace(isolated.workspace), { removable: true });
+    const shared = await prepareWorkspace(root, "agent-2", worktrees);
+    assert.equal(shared.workspace.mode, "directory");
+    assert.match(shared.workspace.warning!, /may conflict/);
+  } finally {
+    await execFileAsync("git", ["-C", repository, "worktree", "remove", "--force", join(worktrees, "agent-1")]).catch(() => undefined);
+    await execFileAsync("git", ["-C", repository, "branch", "-D", "pi-agents-view/agent-1"]).catch(() => undefined);
     await rm(root, { recursive: true, force: true });
   }
 });
