@@ -18,7 +18,7 @@ export class WorkerHost {
 
   async launch(id: string, root: string, workspace: Workspace, prompt?: string): Promise<AgentRecord> {
     const now = new Date().toISOString();
-    const record: AgentRecord = { id, root, workspace, state: "starting", createdAt: now, updatedAt: now, activity: "Starting" };
+    const record: AgentRecord = { id, root, workspace, task: prompt?.trim().slice(0, 160) || "New agent", state: "starting", createdAt: now, updatedAt: now, activity: "Starting" };
     await this.persist(record);
     await this.start(record, ["--session-dir", join(this.sessionsDir, record.id)]);
     if (prompt?.trim()) await this.prompt(record.id, prompt);

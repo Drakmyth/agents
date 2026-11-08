@@ -1,7 +1,9 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { randomUUID } from "node:crypto";
 import { SupervisorClient } from "./client.ts";
+import { DashboardModel, showDashboard } from "./dashboard.ts";
 import { agentViewPaths } from "./paths.ts";
+import { loadPreferences, savePreferences } from "./preferences.ts";
 
 export default function piAgentsView(pi: ExtensionAPI): void {
   pi.registerFlag("agents", {
@@ -10,10 +12,12 @@ export default function piAgentsView(pi: ExtensionAPI): void {
     default: false,
   });
 
-  const client = new SupervisorClient(agentViewPaths());
+  const paths = agentViewPaths();
+  const client = new SupervisorClient(paths);
   const leaseId = randomUUID();
   let leased = false;
   let renewal: NodeJS.Timeout | undefined;
+  let open = false;
   const connect = async () => {
     const health = await client.connectOrStart();
     if (!leased) {
@@ -25,26 +29,68 @@ export default function piAgentsView(pi: ExtensionAPI): void {
     return health;
   };
 
+  const openView = async (ctx: ExtensionContext, exitOnClose: boolean) => {
+    if (open) return;
+    if (ctx.mode !== "tui") {
+      ctx.ui.notify("Agent View requires interactive TUI mode", "error");
+      return;
+    }
+    open = true;
+    try {
+      await connect();
+      const preferences = await loadPreferences(paths.preferencesFile);
+      const model = new DashboardModel(preferences.grouping);
+      while (true) {
+        const action = await showDashboard(ctx, client, model);
+        preferences.grouping = model.grouping;
+        await savePreferences(paths.preferencesFile, preferences);
+        if (action === "close") {
+          if (exitOnClose) ctx.shutdown();
+          return;
+        }
+        if (action === "filter") {
+          const query = await ctx.ui.input("Filter agents", "task, root, activity, or state");
+          if (query !== undefined) model.setFilter(query);
+          continue;
+        }
+        if (action === "new") {
+          const root = await ctx.ui.input("Agent root directory", `Blank uses ${ctx.cwd}`);
+          if (root === undefined) continue;
+          const prompt = await ctx.ui.editor("Agent task", "");
+          if (!prompt?.trim()) continue;
+          try {
+            await client.request("launch", {
+              payload: { root: root.trim() || ctx.cwd, prompt }, timeoutMs: 30_000, idempotencyKey: randomUUID(),
+            });
+          } catch (error) { ctx.ui.notify(`Could not launch agent: ${message(error)}`, "error"); }
+          continue;
+        }
+        const selected = model.selected();
+        if (!selected) continue;
+        const method = action === "stop" ? "stop" : action === "resume" ? "resume" : "abort";
+        try { await client.request(method, { payload: { id: selected.id }, timeoutMs: 30_000 }); }
+        catch (error) { ctx.ui.notify(`Could not ${method} agent: ${message(error)}`, "error"); }
+      }
+    } catch (error) {
+      ctx.ui.notify(`Agent View failed: ${message(error)}`, "error");
+    } finally { open = false; }
+  };
+
   pi.registerCommand("agents", {
     description: "Open Agent View",
-    handler: async (_args, ctx) => {
-      try {
-        const health = await connect() as { pid: number };
-        ctx.ui.notify(`Agent View supervisor is ready (pid ${health.pid}). The dashboard arrives in the UI milestone.`, "info");
-      } catch (error) {
-        ctx.ui.notify(`Agent View supervisor failed: ${error instanceof Error ? error.message : String(error)}`, "error");
-      }
-    },
+    handler: async (_args, ctx) => openView(ctx, false),
   });
 
   pi.on("session_start", async (_event, ctx) => {
-    if (!pi.getFlag("agents")) return;
-    try { await connect(); }
-    catch (error) { ctx.ui.notify(`Agent View supervisor failed: ${error instanceof Error ? error.message : String(error)}`, "error"); }
+    if (pi.getFlag("agents")) await openView(ctx, true);
   });
 
   pi.on("session_shutdown", async () => {
     if (renewal) clearInterval(renewal);
     if (leased) await client.releaseLease(leaseId).catch(() => undefined);
   });
+}
+
+function message(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
