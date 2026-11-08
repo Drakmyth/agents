@@ -25,7 +25,8 @@ Both entry points open the full-screen dashboard. `pi --agents` exits Pi when th
 - Automatic Git worktrees with selected-subdirectory preservation
 - Direct execution with conflict warnings for non-Git directories
 - Stable root-grouped dashboard with optional state or ungrouped views
-- Task dispatch, filtering, abort, stop, and resume controls
+- Claude-style persistent task composer with an explicit active dispatch root
+- Filtering, abort, stop, and resume controls
 
 When the final Agent View client exits, idle workers will stop immediately and executing workers will stop after their current turns. The supervisor then exits so Pi's installation files remain available to Winget. Reopening Agent View restores resumable sessions from the registry.
 

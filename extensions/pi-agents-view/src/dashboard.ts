@@ -1,10 +1,12 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
+import { Editor, Key, matchesKey, truncateToWidth, type Component, type Focusable } from "@earendil-works/pi-tui";
 import type { AgentRecord, Snapshot } from "./protocol.ts";
 import type { SupervisorClient } from "./client.ts";
 
 export type Grouping = "root" | "state" | "none";
-export type DashboardAction = "new" | "filter" | "stop" | "resume" | "abort" | "close";
+export type DashboardResult =
+  | { type: "dispatch"; prompt: string }
+  | { type: "root" | "filter" | "stop" | "resume" | "abort" | "close" };
 
 export class DashboardModel {
   private agents: AgentRecord[] = [];
@@ -17,7 +19,6 @@ export class DashboardModel {
     this.agents = snapshot.registry.agents;
     if (!this.selectedId || !this.agents.some((agent) => agent.id === this.selectedId)) this.selectedId = this.visible()[0]?.id;
   }
-
   setFilter(query: string): void { this.query = query.trim().toLowerCase(); this.ensureVisible(); }
   filter(): string { return this.query; }
   selected(): AgentRecord | undefined { return this.agents.find((agent) => agent.id === this.selectedId); }
@@ -31,7 +32,6 @@ export class DashboardModel {
     const index = Math.max(0, rows.findIndex((agent) => agent.id === this.selectedId));
     this.selectedId = rows[Math.max(0, Math.min(rows.length - 1, index + delta))]!.id;
   }
-
   groups(): Array<{ label: string; agents: AgentRecord[] }> {
     const values = this.visible();
     if (this.grouping === "none") return [{ label: "Agents", agents: values }];
@@ -43,75 +43,96 @@ export class DashboardModel {
     }
     return [...groups].sort(([a], [b]) => a.localeCompare(b)).map(([label, agents]) => ({ label, agents }));
   }
-
   private visible(): AgentRecord[] {
     return this.agents.filter((agent) => !this.query || [agent.task, agent.root, agent.activity, agent.state]
       .filter(Boolean).join(" ").toLowerCase().includes(this.query))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
   }
-
   private ensureVisible(): void {
     if (!this.visible().some((agent) => agent.id === this.selectedId)) this.selectedId = this.visible()[0]?.id;
   }
 }
 
-export async function showDashboard(ctx: ExtensionContext, client: SupervisorClient, model: DashboardModel): Promise<DashboardAction> {
-  return ctx.ui.custom<DashboardAction>((tui, theme, _keys, done) => {
+export async function showDashboard(
+  ctx: ExtensionContext,
+  client: SupervisorClient,
+  model: DashboardModel,
+  dispatchRoot: string,
+): Promise<DashboardResult> {
+  return ctx.ui.custom<DashboardResult>((tui, theme, _keys, done) => {
     let closed = false;
+    let listFocused = false;
+    const editor = new Editor(tui, {
+      borderColor: (text) => theme.fg(listFocused ? "border" : "borderAccent", text),
+      selectList: {
+        selectedPrefix: (text) => theme.fg("accent", text), selectedText: (text) => theme.fg("accent", text),
+        description: (text) => theme.fg("muted", text), scrollInfo: (text) => theme.fg("dim", text),
+        noMatch: (text) => theme.fg("warning", text),
+      },
+    }, { paddingX: 1 });
+    editor.onSubmit = (value) => {
+      const prompt = value.trim();
+      if (prompt) finish({ type: "dispatch", prompt });
+    };
     const refresh = async () => {
       try { model.update(await client.request("snapshot") as Snapshot); tui.requestRender(); } catch { /* next tick retries */ }
     };
     void refresh();
     const timer = setInterval(() => void refresh(), 1_000);
-    const finish = (action: DashboardAction) => {
+    const finish = (result: DashboardResult) => {
       if (closed) return;
-      closed = true; clearInterval(timer); done(action);
+      closed = true; clearInterval(timer); done(result);
     };
-    return {
+    const view: Component & Focusable = {
+      focused: true,
       render(width: number): string[] {
+        const safeWidth = Math.max(1, width);
         const lines = [
-          theme.fg("accent", theme.bold("Pi Agent View")) + theme.fg("dim", `  group: ${model.grouping}${model.filter() ? `  filter: ${model.filter()}` : ""}`),
-          theme.fg("dim", "n new  / filter  g group  x stop  R resume  a abort  q quit"), "",
+          theme.fg("accent", theme.bold("Pi Agent View")) + theme.fg("dim", `  ${dispatchRoot}  ·  group: ${model.grouping}${model.filter() ? `  ·  filter: ${model.filter()}` : ""}`),
+          theme.fg("dim", "Tab focus  Ctrl+R root  Ctrl+F filter  g group  x stop  R resume  a abort  Esc quit"), "",
         ];
         const groups = model.groups();
-        if (!groups.length) lines.push(theme.fg("muted", model.filter() ? "No agents match the filter." : "No agents. Press n to dispatch a task."));
+        if (!groups.length) lines.push(theme.fg("muted", model.filter() ? "No agents match the filter." : "Type a task below and press Enter."));
         for (const group of groups) {
           lines.push(theme.fg("accent", `${group.label} (${group.agents.length})`));
           for (const agent of group.agents) {
             const selected = model.selected()?.id === agent.id;
             const attention = agent.state === "waiting" || agent.state === "failed";
-            const marker = selected ? ">" : " ";
             const workspace = agent.workspace.mode === "worktree" ? agent.workspace.branch ?? "worktree" : "shared directory";
-            lines.push(` ${theme.fg(selected ? "accent" : "dim", marker)} ${theme.fg(attention ? "warning" : stateColor(agent.state), stateIcon(agent.state))} ${theme.bold(agent.task)}  ${theme.fg("muted", agent.activity ?? agent.state)}  ${theme.fg("dim", `${workspace} · ${age(agent.createdAt)}`)}`);
-            if (selected) lines.push(theme.fg("dim", `      ${agent.root}${agent.workspace.warning ? ` · ${agent.workspace.warning}` : ""}`));
+            lines.push(` ${theme.fg(selected && listFocused ? "accent" : "dim", selected ? ">" : " ")} ${theme.fg(attention ? "warning" : stateColor(agent.state), stateIcon(agent.state))} ${theme.bold(agent.task)}  ${theme.fg("muted", agent.activity ?? agent.state)}  ${theme.fg("dim", `${workspace} · ${age(agent.createdAt)}`)}`);
+            if (selected && listFocused) lines.push(theme.fg("dim", `      ${agent.root}${agent.workspace.warning ? ` · ${agent.workspace.warning}` : ""}`));
           }
         }
-        return lines.map((line) => truncateToWidth(line, Math.max(1, width)));
+        const editorLines = editor.render(safeWidth);
+        return [...lines, "", theme.fg("dim", `New agent in ${dispatchRoot}`), ...editorLines]
+          .slice(-Math.max(1, tui.terminal.rows)).map((line) => truncateToWidth(line, safeWidth));
       },
-      invalidate() {},
-      dispose() { clearInterval(timer); },
+      invalidate() { editor.invalidate(); },
       handleInput(data: string): void {
-        if (matchesKey(data, Key.up) || data === "k") model.move(-1);
-        else if (matchesKey(data, Key.down) || data === "j") model.move(1);
-        else if (data === "g") model.cycleGrouping();
-        else if (data === "n") finish("new");
-        else if (data === "/") finish("filter");
-        else if (data === "x" && model.selected()) finish("stop");
-        else if (data === "R" && model.selected()) finish("resume");
-        else if (data === "a" && model.selected()) finish("abort");
-        else if (data === "q" || matchesKey(data, Key.escape)) finish("close");
+        if (matchesKey(data, Key.tab)) { listFocused = !listFocused; editor.focused = !listFocused; }
+        else if (matchesKey(data, "ctrl+r")) finish({ type: "root" });
+        else if (matchesKey(data, "ctrl+f")) finish({ type: "filter" });
+        else if (listFocused) {
+          if (matchesKey(data, Key.up) || data === "k") model.move(-1);
+          else if (matchesKey(data, Key.down) || data === "j") model.move(1);
+          else if (data === "g") model.cycleGrouping();
+          else if (data === "x" && model.selected()) finish({ type: "stop" });
+          else if (data === "R" && model.selected()) finish({ type: "resume" });
+          else if (data === "a" && model.selected()) finish({ type: "abort" });
+          else if (matchesKey(data, Key.escape) || data === "q") finish({ type: "close" });
+        } else if (matchesKey(data, Key.escape) && !editor.getText()) {
+          listFocused = true; editor.focused = false;
+        } else editor.handleInput(data);
         tui.requestRender();
       },
     };
+    Object.defineProperty(view, "focused", { get: () => true, set: (value: boolean) => { editor.focused = value && !listFocused; } });
+    return view;
   });
 }
 
-function stateLabel(state: AgentRecord["state"]): string {
-  return state === "waiting" ? "Needs input" : `${state[0]!.toUpperCase()}${state.slice(1)}`;
-}
-function stateIcon(state: AgentRecord["state"]): string {
-  return ({ starting: "◌", running: "●", waiting: "!", idle: "○", completed: "✓", failed: "×", stopped: "■" })[state];
-}
+function stateLabel(state: AgentRecord["state"]): string { return state === "waiting" ? "Needs input" : `${state[0]!.toUpperCase()}${state.slice(1)}`; }
+function stateIcon(state: AgentRecord["state"]): string { return ({ starting: "◌", running: "●", waiting: "!", idle: "○", completed: "✓", failed: "×", stopped: "■" })[state]; }
 function stateColor(state: AgentRecord["state"]): "success" | "warning" | "error" | "muted" {
   if (state === "failed") return "error";
   if (state === "running" || state === "starting" || state === "waiting") return "warning";
