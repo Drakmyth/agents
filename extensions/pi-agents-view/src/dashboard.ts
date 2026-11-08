@@ -5,8 +5,8 @@ import type { SupervisorClient } from "./client.ts";
 
 export type Grouping = "root" | "state" | "none";
 export type DashboardResult =
-  | { type: "dispatch"; prompt: string }
-  | { type: "root" | "filter" | "stop" | "resume" | "abort" | "close" };
+  | { type: "dispatch"; prompt: string; root: string }
+  | { type: "filter" | "stop" | "resume" | "abort" | "close" };
 
 export class DashboardModel {
   private agents: AgentRecord[] = [];
@@ -22,6 +22,9 @@ export class DashboardModel {
   setFilter(query: string): void { this.query = query.trim().toLowerCase(); this.ensureVisible(); }
   filter(): string { return this.query; }
   selected(): AgentRecord | undefined { return this.agents.find((agent) => agent.id === this.selectedId); }
+  dispatchRoot(defaultRoot: string): string {
+    return this.grouping === "root" ? this.selected()?.workspace.selectedRoot ?? defaultRoot : defaultRoot;
+  }
   cycleGrouping(): void {
     this.grouping = this.grouping === "root" ? "state" : this.grouping === "state" ? "none" : "root";
     this.ensureVisible();
@@ -61,9 +64,8 @@ export async function showDashboard(
 ): Promise<DashboardResult> {
   return ctx.ui.custom<DashboardResult>((tui, theme, _keys, done) => {
     let closed = false;
-    let listFocused = false;
     const editor = new Editor(tui, {
-      borderColor: (text) => theme.fg(listFocused ? "border" : "borderAccent", text),
+      borderColor: (text) => theme.fg("borderAccent", text),
       selectList: {
         selectedPrefix: (text) => theme.fg("accent", text), selectedText: (text) => theme.fg("accent", text),
         description: (text) => theme.fg("muted", text), scrollInfo: (text) => theme.fg("dim", text),
@@ -72,7 +74,8 @@ export async function showDashboard(
     }, { paddingX: 1 });
     editor.onSubmit = (value) => {
       const prompt = value.trim();
-      if (prompt) finish({ type: "dispatch", prompt });
+      if (prompt === "/quit") finish({ type: "close" });
+      else if (prompt) finish({ type: "dispatch", prompt, root: model.dispatchRoot(dispatchRoot) });
     };
     const refresh = async () => {
       try { model.update(await client.request("snapshot") as Snapshot); tui.requestRender(); } catch { /* next tick retries */ }
@@ -88,8 +91,8 @@ export async function showDashboard(
       render(width: number): string[] {
         const safeWidth = Math.max(1, width);
         const lines = [
-          theme.fg("accent", theme.bold("Pi Agent View")) + theme.fg("dim", `  ${dispatchRoot}  ·  group: ${model.grouping}${model.filter() ? `  ·  filter: ${model.filter()}` : ""}`),
-          theme.fg("dim", "Tab focus  Ctrl+R root  Ctrl+F filter  g group  x stop  R resume  a abort  Esc quit"), "",
+          theme.fg("accent", theme.bold("Pi Agent View")) + theme.fg("dim", `  ${model.dispatchRoot(dispatchRoot)}  ·  group: ${model.grouping}${model.filter() ? `  ·  filter: ${model.filter()}` : ""}`),
+          theme.fg("dim", "↑/↓ select  Ctrl+S group  Ctrl+F filter  Ctrl+X stop  Ctrl+Shift+R resume  Ctrl+Alt+X abort  Esc quit"), "",
         ];
         const groups = model.groups();
         if (!groups.length) lines.push(theme.fg("muted", model.filter() ? "No agents match the filter." : "Type a task below and press Enter."));
@@ -99,34 +102,31 @@ export async function showDashboard(
             const selected = model.selected()?.id === agent.id;
             const attention = agent.state === "waiting" || agent.state === "failed";
             const workspace = agent.workspace.mode === "worktree" ? agent.workspace.branch ?? "worktree" : "shared directory";
-            lines.push(` ${theme.fg(selected && listFocused ? "accent" : "dim", selected ? ">" : " ")} ${theme.fg(attention ? "warning" : stateColor(agent.state), stateIcon(agent.state))} ${theme.bold(agent.task)}  ${theme.fg("muted", agent.activity ?? agent.state)}  ${theme.fg("dim", `${workspace} · ${age(agent.createdAt)}`)}`);
-            if (selected && listFocused) lines.push(theme.fg("dim", `      ${agent.root}${agent.workspace.warning ? ` · ${agent.workspace.warning}` : ""}`));
+            lines.push(` ${theme.fg(selected ? "accent" : "dim", selected ? ">" : " ")} ${theme.fg(attention ? "warning" : stateColor(agent.state), stateIcon(agent.state))} ${theme.bold(agent.task)}  ${theme.fg("muted", agent.activity ?? agent.state)}  ${theme.fg("dim", `${workspace} · ${age(agent.createdAt)}`)}`);
+            if (selected) lines.push(theme.fg("dim", `      ${agent.root}${agent.workspace.warning ? ` · ${agent.workspace.warning}` : ""}`));
           }
         }
         const editorLines = editor.render(safeWidth);
-        return [...lines, "", theme.fg("dim", `New agent in ${dispatchRoot}`), ...editorLines]
+        return [...lines, "", theme.fg("dim", `New agent in ${model.dispatchRoot(dispatchRoot)}`), ...editorLines]
           .slice(-Math.max(1, tui.terminal.rows)).map((line) => truncateToWidth(line, safeWidth));
       },
       invalidate() { editor.invalidate(); },
       handleInput(data: string): void {
-        if (matchesKey(data, Key.tab)) { listFocused = !listFocused; editor.focused = !listFocused; }
-        else if (matchesKey(data, "ctrl+r")) finish({ type: "root" });
+        if (matchesKey(data, Key.up)) model.move(-1);
+        else if (matchesKey(data, Key.down)) model.move(1);
+        else if (matchesKey(data, "ctrl+s")) model.cycleGrouping();
         else if (matchesKey(data, "ctrl+f")) finish({ type: "filter" });
-        else if (listFocused) {
-          if (matchesKey(data, Key.up) || data === "k") model.move(-1);
-          else if (matchesKey(data, Key.down) || data === "j") model.move(1);
-          else if (data === "g") model.cycleGrouping();
-          else if (data === "x" && model.selected()) finish({ type: "stop" });
-          else if (data === "R" && model.selected()) finish({ type: "resume" });
-          else if (data === "a" && model.selected()) finish({ type: "abort" });
-          else if (matchesKey(data, Key.escape) || data === "q") finish({ type: "close" });
-        } else if (matchesKey(data, Key.escape) && !editor.getText()) {
-          listFocused = true; editor.focused = false;
+        else if (matchesKey(data, "ctrl+x") && model.selected()) finish({ type: "stop" });
+        else if (matchesKey(data, "ctrl+shift+r") && model.selected()) finish({ type: "resume" });
+        else if (matchesKey(data, "ctrl+alt+x") && model.selected()) finish({ type: "abort" });
+        else if (matchesKey(data, Key.escape)) {
+          if (editor.getText()) editor.setText("");
+          else finish({ type: "close" });
         } else editor.handleInput(data);
         tui.requestRender();
       },
     };
-    Object.defineProperty(view, "focused", { get: () => true, set: (value: boolean) => { editor.focused = value && !listFocused; } });
+    Object.defineProperty(view, "focused", { get: () => editor.focused, set: (value: boolean) => { editor.focused = value; } });
     return view;
   });
 }

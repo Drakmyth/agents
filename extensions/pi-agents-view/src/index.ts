@@ -40,19 +40,13 @@ export default function piAgentsView(pi: ExtensionAPI): void {
       await connect();
       const preferences = await loadPreferences(paths.preferencesFile);
       const model = new DashboardModel(preferences.grouping);
-      let dispatchRoot = ctx.cwd;
       while (true) {
-        const action = await showDashboard(ctx, client, model, dispatchRoot);
+        const action = await showDashboard(ctx, client, model, ctx.cwd);
         preferences.grouping = model.grouping;
         await savePreferences(paths.preferencesFile, preferences);
         if (action.type === "close") {
           if (exitOnClose) ctx.shutdown();
           return;
-        }
-        if (action.type === "root") {
-          const root = await ctx.ui.input("Dispatch root directory", dispatchRoot);
-          if (root?.trim()) dispatchRoot = root.trim();
-          continue;
         }
         if (action.type === "filter") {
           const query = await ctx.ui.input("Filter agents", "task, root, activity, or state");
@@ -62,7 +56,7 @@ export default function piAgentsView(pi: ExtensionAPI): void {
         if (action.type === "dispatch") {
           try {
             await client.request("launch", {
-              payload: { root: dispatchRoot, prompt: action.prompt }, timeoutMs: 30_000, idempotencyKey: randomUUID(),
+              payload: { root: action.root, prompt: action.prompt }, timeoutMs: 30_000, idempotencyKey: randomUUID(),
             });
           } catch (error) { ctx.ui.notify(`Could not launch agent: ${message(error)}`, "error"); }
           continue;
