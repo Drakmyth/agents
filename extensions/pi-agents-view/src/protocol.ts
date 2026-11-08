@@ -13,9 +13,13 @@ export interface AgentRecord {
   state: "starting" | "running" | "waiting" | "idle" | "completed" | "failed" | "stopped";
   createdAt: string;
   updatedAt: string;
+  sessionFile?: string;
+  pid?: number;
+  activity?: string;
+  error?: string;
 }
 
-export type RequestMethod = "health" | "snapshot" | "acquireLease" | "renewLease" | "releaseLease" | "cancel" | "shutdown";
+export type RequestMethod = "health" | "snapshot" | "launch" | "prompt" | "abort" | "stop" | "resume" | "acquireLease" | "renewLease" | "releaseLease" | "cancel" | "shutdown";
 
 export interface Request {
   type: "request";
@@ -25,6 +29,7 @@ export interface Request {
   idempotencyKey?: string;
   targetId?: string;
   leaseId?: string;
+  payload?: unknown;
 }
 
 export interface Response {

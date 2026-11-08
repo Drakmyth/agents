@@ -10,7 +10,7 @@ export class SupervisorClient {
 
   constructor(private readonly paths: AgentViewPaths) {}
 
-  async request(method: RequestMethod, options: { timeoutMs?: number; idempotencyKey?: string; targetId?: string; leaseId?: string } = {}): Promise<unknown> {
+  async request(method: RequestMethod, options: { timeoutMs?: number; idempotencyKey?: string; targetId?: string; leaseId?: string; payload?: unknown } = {}): Promise<unknown> {
     const timeoutMs = options.timeoutMs ?? 5_000;
     const id = `client-${process.pid}-${++this.sequence}`;
     const socket = createConnection(this.paths.endpoint);
@@ -24,17 +24,20 @@ export class SupervisorClient {
       socket.once("error", reject);
       socket.on("data", (chunk: string) => {
         buffer += chunk;
-        const newline = buffer.indexOf("\n");
-        if (newline < 0) return;
-        clearTimeout(timer);
-        socket.end();
-        const value = JSON.parse(buffer.slice(0, newline)) as Response;
-        value.ok ? resolve(value.data) : reject(new Error(value.error));
+        for (let newline = buffer.indexOf("\n"); newline >= 0; newline = buffer.indexOf("\n")) {
+          const value = JSON.parse(buffer.slice(0, newline)) as Response;
+          buffer = buffer.slice(newline + 1);
+          if (value.type !== "response" || value.id !== id) continue;
+          clearTimeout(timer);
+          socket.end();
+          value.ok ? resolve(value.data) : reject(new Error(value.error));
+          return;
+        }
       });
     });
     socket.once("connect", () => socket.write(`${JSON.stringify({
       type: "request", id, method, deadlineAt: Date.now() + timeoutMs,
-      idempotencyKey: options.idempotencyKey, targetId: options.targetId, leaseId: options.leaseId,
+      idempotencyKey: options.idempotencyKey, targetId: options.targetId, leaseId: options.leaseId, payload: options.payload,
     })}\n`));
     return response;
   }

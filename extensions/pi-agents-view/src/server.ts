@@ -2,31 +2,47 @@ import { chmod, rm } from "node:fs/promises";
 import { createServer, type Server, type Socket } from "node:net";
 import type { AgentViewPaths } from "./paths.ts";
 import { MAX_MESSAGE_BYTES, PROTOCOL_VERSION, type Request, type Response, type Snapshot } from "./protocol.ts";
-import { acquireLock, RegistryStore } from "./registry.ts";
+import { acquireLock, processAlive, RegistryStore } from "./registry.ts";
+import { terminatePid, WorkerHost } from "./workers.ts";
 
 export interface SupervisorServerOptions {
   exitOnIdle?: boolean;
   idleDelayMs?: number;
   leaseTtlMs?: number;
+  drainGraceMs?: number;
 }
 
 export class SupervisorServer {
   private readonly registry: RegistryStore;
+  private readonly workers: WorkerHost;
   private server?: Server;
   private lock?: Awaited<ReturnType<typeof acquireLock>>;
   private readonly replies = new Map<string, Response>();
   private readonly cancelled = new Set<string>();
+  private readonly sockets = new Set<Socket>();
   private readonly leases = new Map<string, number>();
   private idleTimer?: NodeJS.Timeout;
   private draining = false;
 
   constructor(private readonly paths: AgentViewPaths, private readonly options: SupervisorServerOptions = {}) {
     this.registry = new RegistryStore(paths);
+    this.workers = new WorkerHost(paths.sessionsDir, async (record) => {
+      await this.registry.put(record);
+      this.broadcast();
+    });
   }
 
   async start(): Promise<void> {
     await this.registry.open();
     this.lock = await acquireLock(this.paths.lockFile);
+    for (const record of this.registry.snapshot().agents) {
+      if (record.pid && processAlive(record.pid)) await terminatePid(record.pid);
+      if (["starting", "running", "waiting", "idle"].includes(record.state)) {
+        record.pid = undefined; record.state = "failed"; record.error = "Supervisor restarted; resume the persisted session";
+        record.activity = "Interrupted"; record.updatedAt = new Date().toISOString();
+        await this.registry.put(record);
+      }
+    }
     if (process.platform !== "win32") await rm(this.paths.endpoint, { force: true });
     this.server = createServer((socket) => this.accept(socket));
     await new Promise<void>((resolve, reject) => {
@@ -40,12 +56,15 @@ export class SupervisorServer {
   async close(): Promise<void> {
     if (this.idleTimer) clearTimeout(this.idleTimer);
     await new Promise<void>((resolve) => this.server?.close(() => resolve()) ?? resolve());
+    await this.workers.drain(this.options.drainGraceMs ?? 30_000);
     if (process.platform !== "win32") await rm(this.paths.endpoint, { force: true });
     await this.lock?.close();
     await rm(this.paths.lockFile, { force: true });
   }
 
   private accept(socket: Socket): void {
+    this.sockets.add(socket);
+    socket.once("close", () => this.sockets.delete(socket));
     socket.setEncoding("utf8");
     let buffer = "";
     socket.on("data", (chunk: string) => {
@@ -67,8 +86,9 @@ export class SupervisorServer {
     if (request.deadlineAt <= Date.now()) return this.send(socket, failure(request.id, "Request deadline exceeded"));
     if (request.idempotencyKey && this.replies.has(request.idempotencyKey)) return this.send(socket, this.replies.get(request.idempotencyKey)!);
 
-    let response: Response;
-    if (request.method === "cancel") {
+    try {
+      let response: Response;
+      if (request.method === "cancel") {
       if (request.targetId) this.cancelled.add(request.targetId);
       response = success(request.id, { cancelled: request.targetId });
     } else if (request.method === "acquireLease") {
@@ -87,7 +107,25 @@ export class SupervisorServer {
       response = success(request.id, { released: request.leaseId });
     } else if (request.method === "renewLease") response = failure(request.id, "Lease is not active");
     else if (this.cancelled.delete(request.id)) response = failure(request.id, "Request cancelled");
-    else if (request.method === "health") response = success(request.id, { protocolVersion: PROTOCOL_VERSION, pid: process.pid, draining: this.draining });
+    else if (request.method === "launch") {
+      if (this.draining) throw new Error("Supervisor is draining");
+      const payload = request.payload as { root?: string; prompt?: string } | undefined;
+      if (!payload?.root) throw new Error("Agent root is required");
+      response = success(request.id, await this.workers.launch(payload.root, payload.prompt));
+    } else if (request.method === "prompt") {
+      if (this.draining) throw new Error("Supervisor is draining");
+      const payload = request.payload as { id?: string; message?: string } | undefined;
+      response = success(request.id, await this.workers.prompt(payload?.id ?? "", payload?.message ?? ""));
+    } else if (request.method === "abort") {
+      response = success(request.id, await this.workers.abort((request.payload as { id?: string })?.id ?? ""));
+    } else if (request.method === "stop") {
+      response = success(request.id, await this.workers.stop((request.payload as { id?: string })?.id ?? ""));
+    } else if (request.method === "resume") {
+      const id = (request.payload as { id?: string })?.id ?? "";
+      const record = this.registry.find(id);
+      if (!record) throw new Error(`Unknown agent: ${id}`);
+      response = success(request.id, await this.workers.resume(record));
+    } else if (request.method === "health") response = success(request.id, { protocolVersion: PROTOCOL_VERSION, pid: process.pid, draining: this.draining });
     else if (request.method === "snapshot") response = success(request.id, this.snapshot());
     else if (request.method === "shutdown") {
       response = success(request.id, { shuttingDown: true });
@@ -96,11 +134,14 @@ export class SupervisorServer {
       return;
     } else response = failure(request.id, "Unknown request method");
 
-    if (request.idempotencyKey) {
-      this.replies.set(request.idempotencyKey, response);
-      if (this.replies.size > 256) this.replies.delete(this.replies.keys().next().value!);
+      if (request.idempotencyKey) {
+        this.replies.set(request.idempotencyKey, response);
+        if (this.replies.size > 256) this.replies.delete(this.replies.keys().next().value!);
+      }
+      this.send(socket, response);
+    } catch (error) {
+      this.send(socket, failure(request.id, error instanceof Error ? error.message : String(error)));
     }
-    this.send(socket, response);
   }
 
   private snapshot(): Snapshot {
@@ -123,6 +164,11 @@ export class SupervisorServer {
 
   private send(socket: Socket, response: Response): void {
     if (socket.writable) socket.write(`${JSON.stringify(response)}\n`);
+  }
+
+  private broadcast(): void {
+    const message = `${JSON.stringify({ type: "snapshot", data: this.snapshot() })}\n`;
+    for (const socket of this.sockets) if (socket.writable) socket.write(message);
   }
 }
 

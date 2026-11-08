@@ -1,6 +1,6 @@
 import { mkdir, open, readFile, rename, rm, writeFile, type FileHandle } from "node:fs/promises";
 import type { AgentViewPaths } from "./paths.ts";
-import type { Registry } from "./protocol.ts";
+import type { AgentRecord, Registry } from "./protocol.ts";
 
 export class RegistryStore {
   private value: Registry = { version: 1, revision: 0, agents: [] };
@@ -22,6 +22,18 @@ export class RegistryStore {
 
   snapshot(): Registry {
     return structuredClone(this.value);
+  }
+
+  find(id: string): AgentRecord | undefined {
+    return this.value.agents.find((agent) => agent.id === id);
+  }
+
+  async put(record: AgentRecord): Promise<void> {
+    const index = this.value.agents.findIndex((agent) => agent.id === record.id);
+    if (index < 0) this.value.agents.push(record);
+    else this.value.agents[index] = record;
+    this.value.revision++;
+    await this.save();
   }
 
   async save(): Promise<void> {
